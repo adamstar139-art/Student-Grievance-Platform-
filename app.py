@@ -547,45 +547,42 @@ page = st.sidebar.radio(
 if page == "الصفحة الأولى: تقديم الشكوى":
     st.subheader("📩 تقديم شكوى جديدة")
     
-    search_type = st.radio(
-        "اختر طريقة تحديد الطالب:",
-        ["القوائم المنسدلة (الصف ⬅️ الفصل ⬅️ الاسم)", "البحث بالاسم أو الهوية الوطنية"]
-    )
+    st.markdown(clean_html("""
+    <div style="background-color:#F8FAFC; padding:15px; border-radius:10px; border-right:4px solid #005A2B; margin-bottom:20px;">
+        <p style="margin:0; font-weight:bold; color:#1E293B;">اختر الصف الدراسي والفصل، ثم أدخل رقم الهوية الوطنية للطالب للبحث وإظهار اسم الطالب وتأكيد تقديم الشكوى:</p>
+    </div>
+    """), unsafe_allow_html=True)
+    
+    c1, c2 = st.columns(2)
+    with c1:
+        grade_sel = st.selectbox("اختر الصف الدراسي:", ["الأول المتوسط", "الثاني المتوسط", "الثالث المتوسط"])
+    with c2:
+        sec_sel = st.selectbox("اختر الفصل:", ["1", "2", "3"])
+        
+    q_id = st.text_input("🔍 أدخل رقم الهوية الوطنية للطالب للبحث:", placeholder="أدخل رقم الهوية الوطنية هنا...")
     
     cursor = conn.cursor()
     selected_student = None
     
-    if search_type == "القوائم المنسدلة (الصف ⬅️ الفصل ⬅️ الاسم)":
-        c1, c2, c3 = st.columns(3)
-        with c1:
-            grade_sel = st.selectbox("اختر الصف الدراسي:", ["الأول المتوسط", "الثاني المتوسط", "الثالث المتوسط"])
-        with c2:
-            sec_sel = st.selectbox("اختر الفصل:", ["1", "2", "3"])
-        with c3:
-            cursor.execute("SELECT national_id, name, phone FROM school_students WHERE grade=? AND section=? ORDER BY name ASC", (grade_sel, sec_sel))
-            s_rows = cursor.fetchall()
-            if s_rows:
-                s_dict = {r[1]: (r[0], r[2]) for r in s_rows}
-                chosen_name = st.selectbox("اختر اسم الطالب:", list(s_dict.keys()))
-                if chosen_name:
-                    selected_student = {
-                        "name": chosen_name,
-                        "national_id": s_dict[chosen_name][0],
-                        "grade": grade_sel,
-                        "section": sec_sel,
-                        "phone": s_dict[chosen_name][1]
-                    }
-            else:
-                st.warning("لا يوجد طلاب مسجلون في هذا الفصل حالياً.")
-    else:
-        q = st.text_input("🔍 ابحث عن اسم الطالب أو برقم الهوية الوطنية:")
-        if q.strip():
-            cursor.execute("SELECT national_id, name, grade, section, phone FROM school_students WHERE name LIKE ? OR national_id LIKE ? ORDER BY name ASC", (f'%{q.strip()}%', f'%{q.strip()}%'))
+    if q_id.strip():
+        # البحث برقم الهوية داخل الصف والفصل أولاً
+        cursor.execute(
+            "SELECT national_id, name, grade, section, phone FROM school_students WHERE national_id LIKE ? AND grade=? AND section=?",
+            (f"%{q_id.strip()}%", grade_sel, sec_sel)
+        )
+        res = cursor.fetchall()
+        
+        # إذا لم يعثر عليه في نفس الفصل المحدد، يتم البحث برقم الهوية في قاعدة البيانات كاملة
+        if not res:
+            cursor.execute(
+                "SELECT national_id, name, grade, section, phone FROM school_students WHERE national_id LIKE ?",
+                (f"%{q_id.strip()}%",)
+            )
             res = cursor.fetchall()
-            if res:
-                r_dict = {f"{r[1]} (هوية: {r[0]} - صف {r[2]}/{r[3]})": r for r in res}
-                chosen_q = st.selectbox("اختر الطالب من نتائج البحث:", list(r_dict.keys()))
-                r_val = r_dict[chosen_q]
+            
+        if res:
+            if len(res) == 1:
+                r_val = res[0]
                 selected_student = {
                     "national_id": r_val[0],
                     "name": r_val[1],
@@ -594,7 +591,18 @@ if page == "الصفحة الأولى: تقديم الشكوى":
                     "phone": r_val[4]
                 }
             else:
-                st.error("لم يتم العثور على طالب مطابق لبيانات البحث.")
+                r_dict = {f"الطالب: {r[1]} - (هوية: {r[0]} - صف {r[2]}/{r[3]})": r for r in res}
+                chosen_q = st.selectbox("اختر الطالب المطابق لرقم الهوية:", list(r_dict.keys()))
+                r_val = r_dict[chosen_q]
+                selected_student = {
+                    "national_id": r_val[0],
+                    "name": r_val[1],
+                    "grade": r_val[2],
+                    "section": r_val[3],
+                    "phone": r_val[4]
+                }
+        else:
+            st.error("❌ لم يتم العثور على طالب برقم الهوية الوطنية أدخلته.")
 
     if selected_student:
         st.success(f"📌 الطالب المحدد: **{selected_student['name']}** | الهوية: `{selected_student['national_id']}` | الصف: {selected_student['grade']} (فصل {selected_student['section']})")
@@ -641,7 +649,7 @@ elif page == "الصفحة الثانية: إدارة المدرسة":
     st.subheader("🔐 صفحة إدارة المدرسة (المدير / الوكيل)")
     
     if not st.session_state["admin_logged_in"]:
-        pwd = st.text_input("أدخل كلمة السر للدخول (******):", type="password", key="pwd_admin_input")
+        pwd = st.text_input("أدخل كلمة السر للدخول (000999):", type="password", key="pwd_admin_input")
         if st.button("🔓 دخول لوحة الإدارة", type="primary"):
             if pwd == "000999":
                 st.session_state["admin_logged_in"] = True
@@ -790,7 +798,7 @@ elif page == "الصفحة الثالثة: التقارير الصادرة":
     st.subheader("📊 التقارير الصادرة والقرارات الإدارية")
     
     if not st.session_state["reports_logged_in"]:
-        pwd_rep = st.text_input("أدخل كلمة السر للوصول للتقارير (******):", type="password", key="pwd_rep_input")
+        pwd_rep = st.text_input("أدخل كلمة السر للوصول للتقارير (000999):", type="password", key="pwd_rep_input")
         if st.button("🔓 دخول صفحة التقارير", type="primary"):
             if pwd_rep == "000999":
                 st.session_state["reports_logged_in"] = True
@@ -918,7 +926,7 @@ elif page == "الصفحة الثالثة: التقارير الصادرة":
         <div class="header">
             <h2>المملكة العربية السعودية - وزارة التعليم</h2>
             <h3>متوسطة الثغر النموذجية الأهلية بالرياض</h3>
-            <h4 style="color: #D4AF37;">تقرير إداري سرّي رقم #{r_id}</h4>
+            <h4 style="color: #D4AF37;">تقرير قرار إداري سرّي رقم #{r_id}</h4>
         </div>
         <p><b>اسم الطالب:</b> {s_name} &nbsp;|&nbsp; <b>الهوية الوطنية:</b> {s_id} &nbsp;|&nbsp; <b>الصف:</b> {grade} (فصل {sec})</p>
         <p><b>تاريخ القرار:</b> {created_at} &nbsp;|&nbsp; <b>جوال ولي الأمر:</b> {phone}</p>
