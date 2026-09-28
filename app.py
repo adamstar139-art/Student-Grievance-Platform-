@@ -167,7 +167,7 @@ def init_db():
     conn = sqlite3.connect("school_complaints.db", check_same_thread=False)
     cursor = conn.cursor()
     cursor.execute("""
-        CREATE TABLE IF NOT EXISTS students (
+        CREATE TABLE IF NOT EXISTS school_students (
             national_id TEXT PRIMARY KEY,
             name TEXT NOT NULL,
             grade TEXT NOT NULL,
@@ -176,7 +176,7 @@ def init_db():
         )
     """)
     cursor.execute("""
-        CREATE TABLE IF NOT EXISTS complaints (
+        CREATE TABLE IF NOT EXISTS student_complaints (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             student_id TEXT NOT NULL,
             student_name TEXT NOT NULL,
@@ -192,7 +192,7 @@ def init_db():
     conn.commit()
     
     # تعبئة النظام ببيانات حقيقية نموذجية من سجلات طلاب متوسطة الثغر
-    cursor.execute("SELECT COUNT(*) FROM students")
+    cursor.execute("SELECT COUNT(*) FROM school_students")
     if cursor.fetchone()[0] == 0:
         sample_students = [
             ('1167628468', 'إبراهيم بن محمد بن علي الوهيبي', 'الأول المتوسط', '1', '966504158122'),
@@ -204,7 +204,7 @@ def init_db():
             ('1163525544', 'ثامر وليد بن عبدالعزيز الطليحي', 'الثالث المتوسط', '3', '966504437710'),
             ('1158966166', 'أصيل ناصر محمد مذكور', 'الثالث المتوسط', '1', '966552149044')
         ]
-        cursor.executemany("INSERT INTO students VALUES (?,?,?,?,?)", sample_students)
+        cursor.executemany("INSERT INTO school_students VALUES (?,?,?,?,?)", sample_students)
         conn.commit()
     return conn
 
@@ -278,7 +278,7 @@ if page == "الصفحة الأولى: تقديم الشكوى":
         with c2:
             sec_sel = st.selectbox("اختر الفصل:", ["1", "2", "3"])
         with c3:
-            cursor.execute("SELECT national_id, name, phone FROM students WHERE grade=? AND section=?", (grade_sel, sec_sel))
+            cursor.execute("SELECT national_id, name, phone FROM school_students WHERE grade=? AND section=?", (grade_sel, sec_sel))
             s_rows = cursor.fetchall()
             if s_rows:
                 s_dict = {r[1]: (r[0], r[2]) for r in s_rows}
@@ -296,7 +296,7 @@ if page == "الصفحة الأولى: تقديم الشكوى":
     else:
         q = st.text_input("🔍 ابحث عن اسم الطالب أو برقم الهوية الوطنية:")
         if q.strip():
-            cursor.execute("SELECT national_id, name, grade, section, phone FROM students WHERE name LIKE ? OR national_id LIKE ?", (f'%{q.strip()}%', f'%{q.strip()}%'))
+            cursor.execute("SELECT national_id, name, grade, section, phone FROM school_students WHERE name LIKE ? OR national_id LIKE ?", (f'%{q.strip()}%', f'%{q.strip()}%'))
             res = cursor.fetchall()
             if res:
                 r_dict = {f"{r[1]} (هوية: {r[0]} - صف {r[2]}/{r[3]})": r for r in res}
@@ -331,7 +331,7 @@ if page == "الصفحة الأولى: تقديم الشكوى":
             if complaint_val.strip():
                 # حفظ الشكوى في SQLite المحلية
                 cursor.execute("""
-                    INSERT INTO complaints (student_id, student_name, grade, section, phone, complaint_text, status)
+                    INSERT INTO student_complaints (student_id, student_name, grade, section, phone, complaint_text, status)
                     VALUES (?, ?, ?, ?, ?, ?, 'pending')
                 """, (selected_student['national_id'], selected_student['name'], selected_student['grade'], selected_student['section'], selected_student['phone'], complaint_val.strip()))
                 conn.commit()
@@ -339,7 +339,7 @@ if page == "الصفحة الأولى: تقديم الشكوى":
                 # حفظ الشكوى في Supabase إن أمكن
                 if supabase_client:
                     try:
-                        supabase_client.table("complaints").insert({
+                        supabase_client.table("student_complaints").insert({
                             "student_id": selected_student['national_id'],
                             "student_name": selected_student['name'],
                             "grade": selected_student['grade'],
@@ -374,7 +374,7 @@ elif page == "الصفحة الثانية: إدارة المدرسة":
         cursor = conn.cursor()
         
         with tab1:
-            cursor.execute("SELECT id, student_name, grade, section, phone, complaint_text, created_at FROM complaints WHERE status='pending' ORDER BY id DESC")
+            cursor.execute("SELECT id, student_name, grade, section, phone, complaint_text, created_at FROM student_complaints WHERE status='pending' ORDER BY id DESC")
             pending_complaints = cursor.fetchall()
             
             if pending_complaints:
@@ -398,12 +398,12 @@ elif page == "الصفحة الثانية: إدارة المدرسة":
                 
                 if st.button("تم اتخاذ القرار", type="primary"):
                     if action_text.strip():
-                        cursor.execute("UPDATE complaints SET action_taken=?, status='resolved' WHERE id=?", (action_text.strip(), c_info[0]))
+                        cursor.execute("UPDATE student_complaints SET action_taken=?, status='resolved' WHERE id=?", (action_text.strip(), c_info[0]))
                         conn.commit()
                         
                         if supabase_client:
                             try:
-                                supabase_client.table("complaints").update({"action_taken": action_text.strip(), "status": "resolved"}).eq("id", c_info[0]).execute()
+                                supabase_client.table("student_complaints").update({"action_taken": action_text.strip(), "status": "resolved"}).eq("id", c_info[0]).execute()
                             except Exception:
                                 pass
                                 
@@ -432,8 +432,13 @@ elif page == "الصفحة الثانية: إدارة المدرسة":
                     if st.form_submit_button("إضافة طالب جديد"):
                         if in_id and in_name and in_phone:
                             try:
-                                cursor.execute("INSERT INTO students VALUES (?,?,?,?,?)", (in_id, in_name, in_grade, in_sec, in_phone))
+                                cursor.execute("INSERT INTO school_students VALUES (?,?,?,?,?)", (in_id, in_name, in_grade, in_sec, in_phone))
                                 conn.commit()
+                                if supabase_client:
+                                    try:
+                                        supabase_client.table("school_students").insert({"national_id": in_id, "name": in_name, "grade": in_grade, "section": in_sec, "phone": in_phone}).execute()
+                                    except Exception:
+                                        pass
                                 st.success(f"تمت إضافة الطالب {in_name} بنجاح.")
                             except sqlite3.IntegrityError:
                                 st.error("رقم الهوية الوطنية موجود بالفعل بالسجل.")
@@ -441,27 +446,37 @@ elif page == "الصفحة الثانية: إدارة المدرسة":
                             st.error("جميع البيانات مطلوبة.")
                             
             elif sub_action == "حذف طالب":
-                cursor.execute("SELECT national_id, name FROM students")
+                cursor.execute("SELECT national_id, name FROM school_students")
                 students_data = cursor.fetchall()
                 if students_data:
                     del_map = {f"{s[1]} (هوية: {s[0]})": s[0] for s in students_data}
                     del_target = st.selectbox("اختر الطالب المراد حذفه نهائياً:", list(del_map.keys()))
                     if st.button("حذف طالب", type="secondary"):
-                        cursor.execute("DELETE FROM students WHERE national_id=?", (del_map[del_target],))
+                        cursor.execute("DELETE FROM school_students WHERE national_id=?", (del_map[del_target],))
                         conn.commit()
+                        if supabase_client:
+                            try:
+                                supabase_client.table("school_students").delete().eq("national_id", del_map[del_target]).execute()
+                            except Exception:
+                                pass
                         st.success("تم حذف الطالب من القاعدة بنجاح.")
                         st.rerun()
                         
             elif sub_action == "تحديث رقم جوال":
-                cursor.execute("SELECT national_id, name, phone FROM students")
+                cursor.execute("SELECT national_id, name, phone FROM school_students")
                 all_st = cursor.fetchall()
                 if all_st:
                     phone_map = {f"{s[1]} (الجوال الحالي: {s[2]})": (s[0], s[2]) for s in all_st}
                     chosen_up = st.selectbox("اختر الطالب لتحديث رقمه:", list(phone_map.keys()))
                     new_ph = st.text_input("رقم الجوال الجديد:", value=phone_map[chosen_up][1])
                     if st.button("تحديث رقم جوال"):
-                        cursor.execute("UPDATE students SET phone=? WHERE national_id=?", (new_ph, phone_map[chosen_up][0]))
+                        cursor.execute("UPDATE school_students SET phone=? WHERE national_id=?", (new_ph, phone_map[chosen_up][0]))
                         conn.commit()
+                        if supabase_client:
+                            try:
+                                supabase_client.table("school_students").update({"phone": new_ph}).eq("national_id", phone_map[chosen_up][0]).execute()
+                            except Exception:
+                                pass
                         st.success("تم تحديث رقم الجوال بنجاح.")
                         st.rerun()
 
@@ -478,7 +493,7 @@ elif page == "الصفحة الثالثة: التقارير الصادرة":
     
     if pwd_rep == "000999":
         cursor = conn.cursor()
-        cursor.execute("SELECT id, student_name, grade, section, phone, complaint_text, action_taken, created_at FROM complaints WHERE status='resolved' ORDER BY id DESC")
+        cursor.execute("SELECT id, student_name, grade, section, phone, complaint_text, action_taken, created_at FROM student_complaints WHERE status='resolved' ORDER BY id DESC")
         reports = cursor.fetchall()
         
         if reports:
