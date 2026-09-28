@@ -3,6 +3,74 @@ import pandas as pd
 import sqlite3
 import datetime
 import urllib.parse
+
+import tempfile
+import subprocess
+
+def create_pdf_report_bytes(s_name, s_id, grade, sec, phone, created_at, comp_text, action_taken, r_id):
+    html_doc = f"""<!DOCTYPE html>
+<html dir="rtl" lang="ar">
+<head>
+    <meta charset="utf-8">
+    <title>تقرير إداري - {s_name}</title>
+    <style>
+        body {{ font-family: 'Noto Naskh Arabic', 'Cairo', sans-serif; padding: 25px; direction: rtl; text-align: right; background: #fff; color: #1e293b; }}
+        .card {{ border: 3px solid #005A2B; padding: 25px; border-radius: 12px; background: #ffffff; }}
+        .header {{ text-align: right; border-right: 5px solid #005A2B; border-bottom: 2px solid #D4AF37; padding-bottom: 12px; margin-bottom: 18px; }}
+        .header h2 {{ color: #005A2B; margin: 0; font-size: 20px; text-align: right; }}
+        .header h3 {{ color: #475569; margin: 4px 0; font-size: 15px; text-align: right; }}
+        .header h4 {{ color: #D4AF37; margin: 8px 0 0 0; font-size: 16px; text-align: right; }}
+        .info-box {{ background: #F8FAFC; border: 1px solid #E2E8F0; padding: 12px 15px; border-radius: 8px; margin-bottom: 15px; font-size: 14px; line-height: 1.8; text-align: right; }}
+        .section {{ margin-bottom: 15px; padding: 12px 15px; border-radius: 8px; font-size: 14px; line-height: 1.6; text-align: right; }}
+        .sigs {{ display: table; width: 100%; margin-top: 30px; border-top: 2px dashed #CBD5E1; padding-top: 15px; text-align: center; }}
+        .sig-col {{ display: table-cell; width: 33.33%; text-align: center; font-size: 13px; font-weight: bold; }}
+    </style>
+</head>
+<body>
+    <div class="card">
+        <div class="header">
+            <h2>المملكة العربية السعودية - وزارة التعليم</h2>
+            <h3>الإدارة العامة للتعليم بمنطقة الرياض | متوسطة الثغر النموذجية الأهلية</h3>
+            <h4>📋 تقرير قرار إداري سرّي رقم #{r_id}</h4>
+        </div>
+        <div class="info-box">
+            <b>اسم الطالب:</b> {s_name} &nbsp;|&nbsp; <b>الهوية الوطنية:</b> {s_id}<br>
+            <b>الصف الدراسي:</b> {grade} (فصل {sec}) &nbsp;|&nbsp; <b>جوال ولي الأمر:</b> {phone}<br>
+            <b>تاريخ القرار:</b> {created_at}
+        </div>
+        <div class="section" style="background:#FFF9E6; border-right: 5px solid #D4AF37;">
+            <b style="color:#5A4300;">📝 نص الشكوى المقدمة:</b><br>
+            <div style="margin-top:6px; color:#453200;">{comp_text}</div>
+        </div>
+        <div class="section" style="background:#E6F4EA; border-right: 5px solid #28a745;">
+            <b style="color:#064E3B;">✅ الإجراءات المتخذة من إدارة المدرسة:</b><br>
+            <div style="margin-top:6px; color:#064E3B; font-weight:bold;">{action_taken}</div>
+        </div>
+        <div class="sigs">
+            <div class="sig-col"><b>وكيل شؤون الطلاب</b><br><span style="color:#005A2B;">صالح بن عبدالله الدعجاني</span></div>
+            <div class="sig-col"><b>وكيل شؤون المعلمين</b><br><span style="color:#005A2B;">محمد مبروك السيد</span></div>
+            <div class="sig-col"><b>مدير المدرسة</b><br><span style="color:#005A2B;">إبراهيم بن موسى التميمي</span></div>
+        </div>
+    </div>
+</body>
+</html>"""
+
+    with tempfile.NamedTemporaryFile(suffix='.html', mode='w', encoding='utf-8', delete=False) as f_html:
+        f_html.write(html_doc)
+        f_html_path = f_html.name
+
+    f_pdf_path = f_html_path.replace('.html', '.pdf')
+    try:
+        subprocess.run(['wkhtmltopdf', '--quiet', '--enable-local-file-access', f_html_path, f_pdf_path], check=True)
+        with open(f_pdf_path, 'rb') as f_pdf:
+            pdf_bytes = f_pdf.read()
+    except Exception:
+        pdf_bytes = html_doc.encode('utf-8')
+    finally:
+        if os.path.exists(f_html_path): os.remove(f_html_path)
+        if os.path.exists(f_pdf_path): os.remove(f_pdf_path)
+    return pdf_bytes
+
 import textwrap
 import re
 
@@ -125,13 +193,15 @@ css_style = clean_html("""
     
     /* ترويسة التقرير الرسمية */
     .report-official-header {
-        text-align: center;
+        text-align: right;
+        border-right: 5px solid #005A2B;
         border-bottom: 2px solid #D4AF37;
         padding-bottom: 15px;
         margin-bottom: 20px;
     }
     .report-official-header h2 {
         color: #005A2B;
+        text-align: right;
         font-size: 20px;
         font-weight: 800;
         margin: 0;
@@ -523,12 +593,12 @@ if page == "الصفحة الأولى: تقديم الشكوى":
     if selected_student:
         st.success(f"📌 الطالب المحدد: **{selected_student['name']}** | الهوية: `{selected_student['national_id']}` | الصف: {selected_student['grade']} (فصل {selected_student['section']})")
         
-        if "complaint_text_key" not in st.session_state:
-            st.session_state["complaint_text_key"] = ""
-            
+        if "complaint_box_val" not in st.session_state:
+            st.session_state["complaint_box_val"] = ""
+
         complaint_val = st.text_area(
             "نص الشكوى",
-            value=st.session_state["complaint_text_key"],
+            key="complaint_box_val",
             height=150,
             placeholder="اكتب نص الشكوى هنا بكل سرية..."
         )
@@ -555,7 +625,7 @@ if page == "الصفحة الأولى: تقديم الشكوى":
                     except Exception:
                         pass
                 
-                st.session_state["complaint_text_key"] = ""
+                st.session_state["complaint_box_val"] = ""
                 st.balloons()
                 st.success("✅ تم إرسال الشكوى بنجاح إلى إدارة المدرسة وتفريغ مربع النص.")
                 st.rerun()
@@ -834,10 +904,10 @@ elif page == "الصفحة الثالثة: التقارير الصادرة":
     <style>
         body {{ font-family: 'Cairo', sans-serif; padding: 30px; direction: rtl; background: #fff; color: #1e293b; }}
         .card {{ border: 2px solid #005A2B; padding: 30px; border-radius: 12px; }}
-        .header {{ text-align: center; border-bottom: 2px solid #D4AF37; padding-bottom: 15px; margin-bottom: 20px; }}
+        .header {{ text-align: right; border-bottom: 2px solid #D4AF37; border-right: 5px solid #005A2B; padding-right: 15px; padding-bottom: 15px; margin-bottom: 20px; }}
         .header h2 {{ color: #005A2B; margin: 0; }}
         .section {{ margin-bottom: 18px; padding: 15px; border-radius: 8px; }}
-        .sigs {{ display: flex; justify-content: space-around; margin-top: 40px; text-align: center; border-top: 2px dashed #ccc; padding-top: 20px; }}
+        .sigs {{ display: flex; justify-content: space-between; margin-top: 40px; text-align: right; border-top: 2px dashed #ccc; padding-top: 20px; }}
     </style>
 </head>
 <body onload="window.print()">
