@@ -189,6 +189,12 @@ css_style = clean_html("""
         padding: 22px;
         margin-bottom: 25px;
         box-shadow: 0 4px 15px rgba(0,0,0,0.06);
+        direction: rtl !important;
+        text-align: right !important;
+    }
+    .report-card *, .report-official-header *, .report-card div, .report-card p, .report-card h2, .report-card h3, .report-card h4 {
+        direction: rtl !important;
+        text-align: right !important;
     }
     
     /* ترويسة التقرير الرسمية */
@@ -593,17 +599,15 @@ if page == "الصفحة الأولى: تقديم الشكوى":
     if selected_student:
         st.success(f"📌 الطالب المحدد: **{selected_student['name']}** | الهوية: `{selected_student['national_id']}` | الصف: {selected_student['grade']} (فصل {selected_student['section']})")
         
-        if "complaint_box_val" not in st.session_state:
-            st.session_state["complaint_box_val"] = ""
-
-        complaint_val = st.text_area(
-            "نص الشكوى",
-            key="complaint_box_val",
-            height=150,
-            placeholder="اكتب نص الشكوى هنا بكل سرية..."
-        )
-        
-        if st.button("📤 ارسال الشكوى لإدارة المدرسة", type="primary", use_container_width=True):
+        with st.form(key="complaint_submission_form", clear_on_submit=True):
+            complaint_val = st.text_area(
+                "نص الشكوى",
+                height=150,
+                placeholder="اكتب نص الشكوى هنا بكل سرية..."
+            )
+            submit_btn = st.form_submit_button("📤 ارسال الشكوى لإدارة المدرسة", type="primary", use_container_width=True)
+            
+        if submit_btn:
             if complaint_val.strip():
                 cursor.execute("""
                     INSERT INTO student_complaints (student_id, student_name, grade, section, phone, complaint_text, status)
@@ -625,21 +629,19 @@ if page == "الصفحة الأولى: تقديم الشكوى":
                     except Exception:
                         pass
                 
-                st.session_state["complaint_box_val"] = ""
                 st.balloons()
                 st.success("✅ تم إرسال الشكوى بنجاح إلى إدارة المدرسة وتفريغ مربع النص.")
-                st.rerun()
             else:
                 st.error("يرجى كتابة نص الشكوى أولاً قبل الإرسال.")
 
 # ===================================================================
-# الصفحة الثانية: إدارة المدرسة (محمية بكلمة سر ******)
+# الصفحة الثانية: إدارة المدرسة (محمية بكلمة سر 000999)
 # ===================================================================
 elif page == "الصفحة الثانية: إدارة المدرسة":
     st.subheader("🔐 صفحة إدارة المدرسة (المدير / الوكيل)")
     
     if not st.session_state["admin_logged_in"]:
-        pwd = st.text_input("أدخل كلمة السر للدخول (******):", type="password", key="pwd_admin_input")
+        pwd = st.text_input("أدخل كلمة السر للدخول (000999):", type="password", key="pwd_admin_input")
         if st.button("🔓 دخول لوحة الإدارة", type="primary"):
             if pwd == "000999":
                 st.session_state["admin_logged_in"] = True
@@ -782,12 +784,13 @@ elif page == "الصفحة الثانية: إدارة المدرسة":
                         st.rerun()
 
 # ===================================================================
-# الصفحة الثالثة: التقارير الصادرة (محمية بكلمة سر ******)
+# الصفحة الثالثة: التقارير الصادرة (محمية بكلمة سر 000999)
 # ===================================================================
 elif page == "الصفحة الثالثة: التقارير الصادرة":
     st.subheader("📊 التقارير الصادرة والقرارات الإدارية")
+    
     if not st.session_state["reports_logged_in"]:
-        pwd_rep = st.text_input("أدخل كلمة السر للوصول للتقارير (******):", type="password", key="pwd_rep_input")
+        pwd_rep = st.text_input("أدخل كلمة السر للوصول للتقارير (000999):", type="password", key="pwd_rep_input")
         if st.button("🔓 دخول صفحة التقارير", type="primary"):
             if pwd_rep == "000999":
                 st.session_state["reports_logged_in"] = True
@@ -835,7 +838,7 @@ elif page == "الصفحة الثالثة: التقارير الصادرة":
                 wa_url = f"https://wa.me/{clean_phone}?text={encoded_wa}"
                 
                 report_html = clean_html(f"""
-                <div class="report-card" id="report-{r_id}">
+                <div class="report-card" id="report-{r_id}" style="direction: rtl !important; text-align: right !important;">
                     <div class="report-official-header">
                         <h2>المملكة العربية السعودية</h2>
                         <p>وزارة التعليم | الإدارة العامة للتعليم بمنطقة الرياض</p>
@@ -843,7 +846,7 @@ elif page == "الصفحة الثالثة: التقارير الصادرة":
                         <h3 style="color:#D4AF37; margin-top:10px; font-weight:800;">📋 تقرير قرار إداري سرّي رقم #{r_id}</h3>
                     </div>
                     
-                    <div style="background:#F8FAFC; padding:15px; border-radius:10px; margin-bottom:15px; border:1px solid #E2E8F0;">
+                    <div style="background:#F8FAFC; padding:15px; border-radius:10px; margin-bottom:15px; border:1px solid #E2E8F0; direction: rtl !important; text-align: right !important;">
                         <p style="margin:5px 0;"><b>اسم الطالب:</b> {s_name} &nbsp;|&nbsp; <b>الهوية الوطنية:</b> <code>{s_id}</code></p>
                         <p style="margin:5px 0;"><b>الصف الدراسي:</b> {grade} (فصل {sec}) &nbsp;|&nbsp; <b>جوال ولي الأمر:</b> <code>{phone}</code></p>
                         <p style="margin:5px 0;"><b>تاريخ التقرير:</b> {created_at}</p>
@@ -851,14 +854,14 @@ elif page == "الصفحة الثالثة: التقارير الصادرة":
 
                     <div style="margin-bottom:15px;">
                         <p style="font-weight:bold; color:#1E293B; margin-bottom:5px;">📝 نص الشكوى المقدمة:</p>
-                        <div style="background:#FFF9E6; border-right:5px solid #D4AF37; padding:12px 15px; border-radius:8px; color:#453200;">
+                        <div style="background:#FFF9E6; border-right:5px solid #D4AF37; padding:12px 15px; border-radius:8px; color:#453200; direction: rtl !important; text-align: right !important;">
                             {comp_text}
                         </div>
                     </div>
 
                     <div style="margin-bottom:20px;">
                         <p style="font-weight:bold; color:#005A2B; margin-bottom:5px;">✅ الإجراءات المتخذة من إدارة المدرسة:</p>
-                        <div style="background:#E6F4EA; border-right:5px solid #28a745; padding:12px 15px; border-radius:8px; font-weight:bold; color:#064E3B;">
+                        <div style="background:#E6F4EA; border-right:5px solid #28a745; padding:12px 15px; border-radius:8px; font-weight:bold; color:#064E3B; direction: rtl !important; text-align: right !important;">
                             {action_taken}
                         </div>
                     </div>
@@ -901,11 +904,12 @@ elif page == "الصفحة الثالثة: التقارير الصادرة":
     <meta charset="utf-8">
     <title>تقرير_إداري_{s_name}</title>
     <style>
-        body {{ font-family: 'Cairo', sans-serif; padding: 30px; direction: rtl; background: #fff; color: #1e293b; }}
-        .card {{ border: 2px solid #005A2B; padding: 30px; border-radius: 12px; }}
-        .header {{ text-align: right; border-bottom: 2px solid #D4AF37; border-right: 5px solid #005A2B; padding-right: 15px; padding-bottom: 15px; margin-bottom: 20px; }}
-        .header h2 {{ color: #005A2B; margin: 0; }}
-        .section {{ margin-bottom: 18px; padding: 15px; border-radius: 8px; }}
+        body {{ font-family: 'Cairo', sans-serif; padding: 30px; direction: rtl !important; text-align: right !important; background: #fff; color: #1e293b; }}
+        .card {{ border: 2px solid #005A2B; padding: 30px; border-radius: 12px; direction: rtl !important; text-align: right !important; }}
+        .header {{ text-align: right !important; border-bottom: 2px solid #D4AF37; border-right: 5px solid #005A2B; padding-right: 15px; padding-bottom: 15px; margin-bottom: 20px; direction: rtl !important; }}
+        .header h2, .header h3, .header h4 {{ color: #005A2B; margin: 0; text-align: right !important; direction: rtl !important; }}
+        .section {{ margin-bottom: 18px; padding: 15px; border-radius: 8px; text-align: right !important; direction: rtl !important; }}
+        p, div, b, span {{ text-align: right !important; direction: rtl !important; }}
         .sigs {{ display: flex; justify-content: space-between; margin-top: 40px; text-align: right; border-top: 2px dashed #ccc; padding-top: 20px; }}
     </style>
 </head>
