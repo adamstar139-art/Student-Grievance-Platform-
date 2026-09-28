@@ -1,305 +1,539 @@
-================================================================================
-منصة سرية لشكاوى الطلاب - متوسطة الثغر النموذجية الأهلية (تطبيق Java / Spring Boot)
-تصميم وتطوير: محمد سامي السعيد
-مخصص للرفع على منصة GitHub: https://github.com/adamstar139-art/Student-Grievance-Platform-
-================================================================================
+import streamlit as st
+import pandas as pd
+import sqlite3
+import datetime
+import urllib.parse
 
-1. ملف التطبيق الرئيسي: StudentGrievanceApplication.java
---------------------------------------------------------------------------------
-package com.althaghr.platform;
+# محاولة استيراد مكتبة Supabase للتخزين السحابي الدائم
+try:
+    from supabase import create_client, Client
+    HAS_SUPABASE = True
+except ImportError:
+    HAS_SUPABASE = False
 
-import org.springframework.boot.SpringApplication;
-import org.springframework.boot.autoconfigure.SpringBootApplication;
-import org.springframework.web.bind.annotation.*;
-import org.springframework.http.ResponseEntity;
-import java.time.LocalDateTime;
-import java.time.format.DateTimeFormatter;
-import java.util.*;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.stream.Collectors;
+# ===================================================================
+# 1. تهيئة الصفحة والهوية الرسمية (تجاوب مع الجوال والكمبيوتر)
+# ===================================================================
+st.set_page_config(
+    page_title="منصة شكاوى الطلاب - متوسطة الثغر النموذجية الأهلية",
+    page_icon="🏫",
+    layout="wide",
+    initial_sidebar_state="auto"
+)
 
-/**
- * منصة الشكاوى السرية لمتوسطة الثغر النموذجية الأهلية
- * تطوير وتصميم: محمد سامي السعيد
- */
-@SpringBootApplication
-@RestController
-@RequestMapping("/api")
-@CrossOrigin(origins = "*")
-public class StudentGrievanceApplication {
-
-    public static void main(String[] args) {
-        SpringApplication.run(StudentGrievanceApplication.class, args);
+# ===================================================================
+# 2. تنسيقات CSS بالهوية الوطنية السعودية وتصميم أنيق للجوال
+# ===================================================================
+st.markdown("""
+<style>
+    @import url('https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800&display=swap');
+    
+    html, body, [class*="css"] {
+        font-family: 'Cairo', sans-serif;
+        direction: rtl;
+        text-align: right;
     }
-
-    // قواعد البيانات المؤقتة والسحابية
-    private static final Map<Long, Complaint> complaintsDb = new ConcurrentHashMap<>();
-    private static final List<Student> studentsRegistry = new ArrayList<>();
-    private static final String ADMIN_PASSWORD = "000999";
-
-    static {
-        // تحميل سجل بيانات طلاب متوسطة الثغر النموذجية المرفقة بالهويات الوطنية وأرقام الجوالات الرسمية
-        // صف أول متوسط
-        studentsRegistry.add(new Student("إبراهيم محمد علي الوهيبي", "الأول المتوسط", "1", "1167628468", "966504158122"));
-        studentsRegistry.add(new Student("الوليد خالد فهد العتيبي", "الأول المتوسط", "1", "1153756612", "966558522229"));
-        studentsRegistry.add(new Student("بلال عبدالرزاق عيسى العيسى", "الأول المتوسط", "1", "2395664317", "966507448712"));
-        studentsRegistry.add(new Student("حسام بن محمد بن علي آل رايان البارقي", "الأول المتوسط", "1", "1170582165", "966504445699"));
-        studentsRegistry.add(new Student("ريان عبدالله جابر الأسمري", "الأول المتوسط", "1", "1169004353", "966554260960"));
-        studentsRegistry.add(new Student("زيد زياد عبداللطيف أبو قبع", "الأول المتوسط", "1", "2446713998", "966590123455"));
-        studentsRegistry.add(new Student("سامي سعد عباس حمد", "الأول المتوسط", "1", "2527104554", "966591781701"));
-        studentsRegistry.add(new Student("سعد ناصر سعد السيف", "الأول المتوسط", "1", "1170111759", "966503219351"));
-        studentsRegistry.add(new Student("عبدالعزيز عبدالله عبدالعزيز العمار", "الأول المتوسط", "1", "1195559479", "966555838394"));
-        studentsRegistry.add(new Student("عبدالله سليمان عبدالله الراجحي", "الأول المتوسط", "1", "1153310501", "0551418881"));
-        studentsRegistry.add(new Student("علي أحمد علي كريري", "الأول المتوسط", "1", "1171448515", "966558885481"));
-        studentsRegistry.add(new Student("عمر عبدالله سعد الجبرين", "الأول المتوسط", "1", "1172018036", "966555249420"));
-        studentsRegistry.add(new Student("مازن إسلام أحمد إبراهيم موسى", "الأول المتوسط", "1", "2552851368", "966550490495"));
-
-        // صف ثاني متوسط
-        studentsRegistry.add(new Student("تركي عبدالعزيز عبدالله المرزوق", "الثاني المتوسط", "2", "1156933093", "966501100076"));
-        studentsRegistry.add(new Student("راكان إبراهيم محمد عبده", "الثاني المتوسط", "2", "2310646332", "966500030732"));
-        studentsRegistry.add(new Student("رايان ناصر عبدالرحمن المرشود", "الثاني المتوسط", "2", "1161397599", "966550666662"));
-        studentsRegistry.add(new Student("صالح ممدوح صالح الجويعي", "الثاني المتوسط", "2", "1163112129", "966549887719"));
-        studentsRegistry.add(new Student("عبدالرحمن محمد صلاح السيد بدر الدين", "الثاني المتوسط", "2", "2508581135", "966507652707"));
-        studentsRegistry.add(new Student("عبدالعزيز تركي عبدالعزيز اللهيم", "الثاني المتوسط", "2", "1162188872", "966505256806"));
-        studentsRegistry.add(new Student("عمر فهد محمد سعد السقامي", "الثاني المتوسط", "2", "1162454266", "966564234552"));
-        studentsRegistry.add(new Student("فيصل محمد صالح الفنتوخ", "الثاني المتوسط", "2", "1165152107", "966556488802"));
-        studentsRegistry.add(new Student("مهند ماجد علي كعبي", "الثاني المتوسط", "2", "1162044851", "966533313738"));
-
-        // صف ثالث متوسط
-        studentsRegistry.add(new Student("ثامر عمر إبراهيم عثمان", "الثالث المتوسط", "3", "1166911709", "966538384444"));
-        studentsRegistry.add(new Student("جهاد فارس عبدالقادر حناوي", "الثالث المتوسط", "3", "008464815", "966562674178"));
-        studentsRegistry.add(new Student("خالد محمد عبدالكريم الخفاجي", "الثالث المتوسط", "3", "1164830562", "966533074601"));
-        studentsRegistry.add(new Student("سعود ناصر سيف العريفي", "الثالث المتوسط", "3", "1167770468", "966505474606"));
-        studentsRegistry.add(new Student("عبدالعزيز ماجد راشد الزير", "الثالث المتوسط", "3", "1167153434", "966500933390"));
-        studentsRegistry.add(new Student("عبدالله بن بندر بن فهد المسيحل", "الثالث المتوسط", "3", "1167267341", "966500155334"));
-        studentsRegistry.add(new Student("عزام خالد شلهوب بن شلهوب", "الثالث المتوسط", "3", "1167515020", "966506404016"));
-        studentsRegistry.add(new Student("عمر وليد ياسين درويش علي", "الثالث المتوسط", "3", "4533080448", "966557790508"));
-        studentsRegistry.add(new Student("يزيد بن حمد بن مترك القحطاني", "الثالث المتوسط", "3", "1166629798", "966556557210"));
+    
+    /* الترويسة بالهوية الوطنية السعودية (الأخضر الملكي والذهبي) */
+    .saudi-header {
+        background: linear-gradient(135deg, #005A2B 0%, #003B1C 100%);
+        color: #FFFFFF;
+        padding: 25px 20px;
+        border-radius: 16px;
+        text-align: center;
+        border-bottom: 5px solid #D4AF37;
+        box-shadow: 0 8px 22px rgba(0,0,0,0.12);
+        margin-bottom: 22px;
     }
-
-    // 1. استرجاع والبحث في قائمة الطلاب
-    @GetMapping("/students")
-    public ResponseEntity<List<Student>> getStudents(
-            @RequestParam(required = false) String grade,
-            @RequestParam(required = false) String classNum,
-            @RequestParam(required = false) String query) {
-
-        List<Student> result = studentsRegistry.stream().filter(s -> {
-            boolean matchGrade = (grade == null || grade.isEmpty() || s.getGrade().equals(grade));
-            boolean matchClass = (classNum == null || classNum.isEmpty() || s.getClassNum().equals(classNum));
-            boolean matchQuery = (query == null || query.isEmpty() ||
-                    s.getName().contains(query) || s.getNationalId().contains(query));
-            return matchGrade && matchClass && matchQuery;
-        }).collect(Collectors.toList());
-
-        return ResponseEntity.ok(result);
+    .saudi-header h1 {
+        color: #FFFFFF !important;
+        font-size: 26px;
+        font-weight: 800;
+        margin-bottom: 8px;
     }
-
-    // 2. استقبال الشكوى وتفريغ المربع والحفظ
-    @PostMapping("/complaints")
-    public ResponseEntity<Map<String, Object>> submitComplaint(@RequestBody Complaint complaint) {
-        long id = System.currentTimeMillis();
-        complaint.setId(id);
-        complaint.setStatus("pending");
-        complaint.setAdminAction("");
-        complaint.setCreatedAt(LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")));
-
-        complaintsDb.put(id, complaint);
-
-        Map<String, Object> response = new HashMap<>();
-        response.put("success", true);
-        response.put("message", "تم إرسال الشكوى بنجاح وبسرية تامة إلى إدارة المدرسة");
-        response.put("complaintId", id);
-        response.put("saveStatus", "تم حفظ البيانات باللون الأخضر (Supabase / Local Database)");
-
-        return ResponseEntity.ok(response);
+    .saudi-header h3 {
+        color: #D4AF37 !important;
+        font-size: 18px;
+        font-weight: 600;
+        margin: 0;
     }
-
-    // 3. التحقق من كلمة السر (000999)
-    @PostMapping("/auth/verify")
-    public ResponseEntity<Map<String, Object>> verifyPassword(@RequestBody Map<String, String> body) {
-        String password = body.get("password");
-        Map<String, Object> res = new HashMap<>();
-        if (ADMIN_PASSWORD.equals(password)) {
-            res.put("authenticated", true);
-            res.put("message", "تم تسجيل الدخول بنجاح");
-            return ResponseEntity.ok(res);
-        } else {
-            res.put("authenticated", false);
-            res.put("message", "كلمة السر غير صحيحة!");
-            return ResponseEntity.status(401).body(res);
-        }
+    
+    /* صندوق التنبيه والأمان والسرية */
+    .notice-box {
+        background-color: #FFF9E6;
+        border-right: 6px solid #D4AF37;
+        border-left: 1px solid #FFEBA8;
+        padding: 16px 20px;
+        border-radius: 12px;
+        color: #5A4300;
+        font-weight: 700;
+        font-size: 15px;
+        margin-bottom: 25px;
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        box-shadow: 0 3px 12px rgba(0,0,0,0.04);
     }
-
-    // 4. عرض الشكاوى الواردة لإدارة المدرسة
-    @GetMapping("/complaints")
-    public ResponseEntity<List<Complaint>> getComplaints(
-            @RequestParam(required = false, defaultValue = "all") String status,
-            @RequestHeader(value = "X-Admin-Password", required = false) String authHeader) {
-
-        if (!ADMIN_PASSWORD.equals(authHeader)) {
-            return ResponseEntity.status(403).build();
-        }
-
-        List<Complaint> list = complaintsDb.values().stream().filter(c -> {
-            if ("pending".equals(status)) return "pending".equals(c.getStatus());
-            if ("resolved".equals(status)) return "resolved".equals(c.getStatus());
-            return true;
-        }).sorted((a, b) -> Long.compare(b.getId(), a.getId())).collect(Collectors.toList());
-
-        return ResponseEntity.ok(list);
+    
+    /* مؤشر حفظ البيانات */
+    .status-saved {
+        background-color: #28a745;
+        color: white;
+        padding: 10px 18px;
+        border-radius: 25px;
+        font-weight: bold;
+        text-align: center;
+        font-size: 14px;
+        box-shadow: 0 2px 8px rgba(40,167,69,0.3);
+        margin-bottom: 18px;
     }
-
-    // 5. اعتماد الإجراءات والتوقيع وتحويل للتقرير
-    @PutMapping("/complaints/{id}/resolve")
-    public ResponseEntity<Map<String, Object>> resolveComplaint(
-            @PathVariable Long id,
-            @RequestBody Map<String, String> body,
-            @RequestHeader(value = "X-Admin-Password", required = false) String authHeader) {
-
-        if (!ADMIN_PASSWORD.equals(authHeader)) {
-            return ResponseEntity.status(403).build();
-        }
-
-        Complaint complaint = complaintsDb.get(id);
-        if (complaint == null) {
-            return ResponseEntity.notFound().build();
-        }
-
-        String action = body.get("adminAction");
-        complaint.setStatus("resolved");
-        complaint.setAdminAction(action);
-        complaint.setActionDate(LocalDateTime.now().format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")));
-
-        Map<String, Object> response = new HashMap<>();
-        response.put("success", true);
-        response.put("message", "تم اتخاذ القرار بنجاح وتحويل الشكوى إلى صفحة التقارير");
-        response.put("whatsappUrl", "https://wa.me/966" + complaint.getPhoneNumber().replaceAll("^0", ""));
-        response.put("signatures", Map.of(
-            "studentAffairsProxy", "صالح بن عبدالله الدعجاني",
-            "teacherAffairsProxy", "محمد مبروك السيد",
-            "schoolPrincipal", "إبراهيم بن موسى التميمي"
-        ));
-
-        return ResponseEntity.ok(response);
+    .status-unsaved {
+        background-color: #dc3545;
+        color: white;
+        padding: 10px 18px;
+        border-radius: 25px;
+        font-weight: bold;
+        text-align: center;
+        font-size: 14px;
+        box-shadow: 0 2px 8px rgba(220,53,69,0.3);
+        margin-bottom: 18px;
     }
-
-    // الكيانات البرمجية Data Models
-    public static class Student {
-        private String name;
-        private String grade;
-        private String classNum;
-        private String nationalId;
-        private String phoneNumber;
-
-        public Student(String name, String grade, String classNum, String nationalId, String phoneNumber) {
-            this.name = name;
-            this.grade = grade;
-            this.classNum = classNum;
-            this.nationalId = nationalId;
-            this.phoneNumber = phoneNumber;
-        }
-
-        public String getName() { return name; }
-        public String getGrade() { return grade; }
-        public String getClassNum() { return classNum; }
-        public String getNationalId() { return nationalId; }
-        public String getPhoneNumber() { return phoneNumber; }
+    
+    /* بطاقة التقرير والشكوى */
+    .report-card {
+        background: #FFFFFF;
+        border: 1px solid #E2E8F0;
+        border-radius: 14px;
+        padding: 22px;
+        margin-bottom: 25px;
+        box-shadow: 0 4px 15px rgba(0,0,0,0.05);
     }
-
-    public static class Complaint {
-        private Long id;
-        private String grade;
-        private String classNum;
-        private String studentName;
-        private String nationalId;
-        private String phoneNumber;
-        private String complaintText;
-        private String status;
-        private String adminAction;
-        private String createdAt;
-        private String actionDate;
-
-        public Long getId() { return id; }
-        public void setId(Long id) { this.id = id; }
-        public String getGrade() { return grade; }
-        public void setGrade(String grade) { this.grade = grade; }
-        public String getClassNum() { return classNum; }
-        public void setClassNum(String classNum) { this.classNum = classNum; }
-        public String getStudentName() { return studentName; }
-        public void setStudentName(String studentName) { this.studentName = studentName; }
-        public String getNationalId() { return nationalId; }
-        public void setNationalId(String nationalId) { this.nationalId = nationalId; }
-        public String getPhoneNumber() { return phoneNumber; }
-        public void setPhoneNumber(String phoneNumber) { this.phoneNumber = phoneNumber; }
-        public String getComplaintText() { return complaintText; }
-        public void setComplaintText(String complaintText) { this.complaintText = complaintText; }
-        public String getStatus() { return status; }
-        public void setStatus(String status) { this.status = status; }
-        public String getAdminAction() { return adminAction; }
-        public void setAdminAction(String adminAction) { this.adminAction = adminAction; }
-        public String getCreatedAt() { return createdAt; }
-        public void setCreatedAt(String createdAt) { this.createdAt = createdAt; }
-        public String getActionDate() { return actionDate; }
-        public void setActionDate(String actionDate) { this.actionDate = actionDate; }
+    
+    /* التوقيعات الرسمية للإدارة */
+    .signatures-block {
+        margin-top: 25px;
+        padding-top: 15px;
+        border-top: 2px dashed #CBD5E1;
+        display: flex;
+        justify-content: space-around;
+        flex-wrap: wrap;
+        text-align: center;
+        background-color: #F8FAFC;
+        border-radius: 10px;
+        padding: 15px;
     }
-}
+    .sig-item {
+        margin: 5px 15px;
+        font-size: 14px;
+        font-weight: 700;
+        color: #1E293B;
+    }
+    
+    /* حقوق التطوير */
+    .dev-footer {
+        text-align: center;
+        padding: 20px;
+        margin-top: 40px;
+        border-top: 1px solid #E2E8F0;
+        color: #64748B;
+        font-size: 14px;
+        font-weight: 600;
+    }
+    
+    /* اخفاء القائمة الجانبية تلقائياً في الجوال عند الاختيار */
+    @media (max-width: 768px) {
+        .saudi-header h1 { font-size: 20px; }
+        .saudi-header h3 { font-size: 14px; }
+        .signatures-block { flex-direction: column; gap: 12px; }
+    }
+</style>
+""", unsafe_allow_html=True)
 
+# ===================================================================
+# 3. إعداد وقواعد البيانات (Supabase + SQLite المحلية الاحتياطية)
+# ===================================================================
+# القيم المباشرة مع القراءة التلقائية من st.secrets في Streamlit
+SUPABASE_URL = "https://yathpzoxjfpgahkbjzgz.supabase.co"
+SUPABASE_KEY = "sb_publishable_4Igw4yxTyqcZzSvXei6TEg_cuxhLKcE"
 
-2. ملف الإعدادات pom.xml (لـ Maven):
---------------------------------------------------------------------------------
-<?xml version="1.0" encoding="UTF-8"?>
-<project xmlns="http://maven.apache.org/POM/4.0.0"
-         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
-    <modelVersion>4.0.0</modelVersion>
-    <parent>
-        <groupId>org.springframework.boot</groupId>
-        <artifactId>spring-boot-starter-parent</artifactId>
-        <version>3.2.0</version>
-        <relativePath/>
-    </parent>
-    <groupId>com.althaghr</groupId>
-    <artifactId>student-grievance-platform</artifactId>
-    <version>1.0.0</version>
-    <name>student-grievance-platform</name>
-    <description>منصة الشكاوى السرية لمتوسطة الثغر النموذجية الأهلية</description>
-    <properties>
-        <java.version>17</java.version>
-    </properties>
-    <dependencies>
-        <dependency>
-            <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter-web</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>org.springframework.boot</groupId>
-            <artifactId>spring-boot-starter-test</artifactId>
-            <scope>test</scope>
-        </dependency>
-    </dependencies>
-    <build>
-        <plugins>
-            <plugin>
-                <groupId>org.springframework.boot</groupId>
-                <artifactId>spring-boot-maven-plugin</artifactId>
-            </plugin>
-        </plugins>
-    </build>
-</project>
+try:
+    if "supabase" in st.secrets:
+        SUPABASE_URL = st.secrets["supabase"].get("url", SUPABASE_URL)
+        SUPABASE_KEY = st.secrets["supabase"].get("key", SUPABASE_KEY)
+except Exception:
+    pass
 
+def init_db():
+    conn = sqlite3.connect("school_complaints.db", check_same_thread=False)
+    cursor = conn.cursor()
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS students (
+            national_id TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            grade TEXT NOT NULL,
+            section TEXT NOT NULL,
+            phone TEXT NOT NULL
+        )
+    """)
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS complaints (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            student_id TEXT NOT NULL,
+            student_name TEXT NOT NULL,
+            grade TEXT NOT NULL,
+            section TEXT NOT NULL,
+            phone TEXT NOT NULL,
+            complaint_text TEXT NOT NULL,
+            action_taken TEXT DEFAULT '',
+            status TEXT DEFAULT 'pending',
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+    conn.commit()
+    
+    # تعبئة النظام ببيانات حقيقية نموذجية من سجلات طلاب متوسطة الثغر
+    cursor.execute("SELECT COUNT(*) FROM students")
+    if cursor.fetchone()[0] == 0:
+        sample_students = [
+            ('1167628468', 'إبراهيم بن محمد بن علي الوهيبي', 'الأول المتوسط', '1', '966504158122'),
+            ('2395664317', 'بلال عبدالرزاق عيسى العيسى', 'الأول المتوسط', '1', '966507448712'),
+            ('1170348286', 'الوليد بن خالد بن فهد العتيبي', 'الأول المتوسط', '2', '966558522229'),
+            ('1163760935', 'أحمد بن سامي بن أحمد العمران', 'الثاني المتوسط', '1', '966551501503'),
+            ('1165495258', 'عبدالله سامي سعد الحوشاني', 'الثاني المتوسط', '2', '966555219086'),
+            ('1166911709', 'ثامر عمر إبراهيم عثمان', 'الثاني المتوسط', '3', '966538384444'),
+            ('1163525544', 'ثامر وليد بن عبدالعزيز الطليحي', 'الثالث المتوسط', '3', '966504437710'),
+            ('1158966166', 'أصيل ناصر محمد مذكور', 'الثالث المتوسط', '1', '966552149044')
+        ]
+        cursor.executemany("INSERT INTO students VALUES (?,?,?,?,?)", sample_students)
+        conn.commit()
+    return conn
 
-3. ملف application.properties:
---------------------------------------------------------------------------------
-server.port=8080
-spring.application.name=StudentGrievancePlatform
-supabase.url=https://looldhswootseeqltohg.supabase.co
-# كلمة السر الإدارية
-admin.auth.password=000999
+conn = init_db()
 
+# فحص حالة الحفظ والاتصال بقاعدة البيانات
+supabase_client = None
+is_saved_status = False
 
-================================================================================
-حقوق الملكية الفكرية والتطوير:
-تصميم وتطوير: محمد سامي السعيد
-مدرسة: متوسطة الثغر النموذجية الأهلية
-================================================================================
+if HAS_SUPABASE and SUPABASE_KEY and SUPABASE_KEY != "YOUR_SUPABASE_ANON_KEY":
+    try:
+        supabase_client = create_client(SUPABASE_URL, SUPABASE_KEY)
+        is_saved_status = True
+    except Exception:
+        is_saved_status = False
+else:
+    # الاعتماد على قاعدة البيانات المحلية لضمان حفظ البيانات
+    is_saved_status = True
+
+# ===================================================================
+# 4. الترويسة والتنبيه الأمني للسرية
+# ===================================================================
+st.markdown("""
+<div class="saudi-header">
+    <h1>🏛️ منصة سرية لشكاوى الطلاب</h1>
+    <h3>متوسطة الثغر النموذجية الأهلية بالرياض</h3>
+</div>
+<div class="notice-box">
+    <span style="font-size:24px;">⚠️</span>
+    <span>تنبيه: عزيزي ولي الأمر / عزيزي الطالب هذه المنصة سرية لايطلع على شكواك غير إدارة المدرسة من مدير - وكيل.</span>
+</div>
+""", unsafe_allow_html=True)
+
+# ===================================================================
+# 5. القائمة الجانبية ولوحة التحكم
+# ===================================================================
+st.sidebar.markdown("### 🎛️ لوحة التحكم")
+
+# إظهار زر حالة حفظ البيانات بلون أخضر أو أحمر
+if is_saved_status:
+    st.sidebar.markdown('<div class="status-saved">🟢 تم حفظ البيانات</div>', unsafe_allow_html=True)
+else:
+    st.sidebar.markdown('<div class="status-unsaved">🔴 لم يتم الحفظ</div>', unsafe_allow_html=True)
+
+st.sidebar.markdown("---")
+
+# اختيار الصفحة من لوحة التحكم
+page = st.sidebar.radio(
+    "انتقل إلى الصفحة المطلوب العمل عليها:",
+    ["الصفحة الأولى: تقديم الشكوى", "الصفحة الثانية: إدارة المدرسة", "الصفحة الثالثة: التقارير الصادرة"]
+)
+
+# ===================================================================
+# الصفحة الأولى: تقديم الشكوى (للطالب وولي الأمر)
+# ===================================================================
+if page == "الصفحة الأولى: تقديم الشكوى":
+    st.subheader("📩 تقديم شكوى جديدة")
+    
+    search_type = st.radio(
+        "اختر طريقة تحديد الطالب:",
+        ["القوائم المنسدلة (الصف ⬅️ الفصل ⬅️ الاسم)", "البحث بالاسم أو الهوية الوطنية"]
+    )
+    
+    cursor = conn.cursor()
+    selected_student = None
+    
+    if search_type == "القوائم المنسدلة (الصف ⬅️ الفصل ⬅️ الاسم)":
+        c1, c2, c3 = st.columns(3)
+        with c1:
+            grade_sel = st.selectbox("اختر الصف الدراسي:", ["الأول المتوسط", "الثاني المتوسط", "الثالث المتوسط"])
+        with c2:
+            sec_sel = st.selectbox("اختر الفصل:", ["1", "2", "3"])
+        with c3:
+            cursor.execute("SELECT national_id, name, phone FROM students WHERE grade=? AND section=?", (grade_sel, sec_sel))
+            s_rows = cursor.fetchall()
+            if s_rows:
+                s_dict = {r[1]: (r[0], r[2]) for r in s_rows}
+                chosen_name = st.selectbox("اختر اسم الطالب:", list(s_dict.keys()))
+                if chosen_name:
+                    selected_student = {
+                        "name": chosen_name,
+                        "national_id": s_dict[chosen_name][0],
+                        "grade": grade_sel,
+                        "section": sec_sel,
+                        "phone": s_dict[chosen_name][1]
+                    }
+            else:
+                st.warning("لا يوجد طلاب مسجلون في هذا الفصل حالياً.")
+    else:
+        q = st.text_input("🔍 ابحث عن اسم الطالب أو برقم الهوية الوطنية:")
+        if q.strip():
+            cursor.execute("SELECT national_id, name, grade, section, phone FROM students WHERE name LIKE ? OR national_id LIKE ?", (f'%{q.strip()}%', f'%{q.strip()}%'))
+            res = cursor.fetchall()
+            if res:
+                r_dict = {f"{r[1]} (هوية: {r[0]} - صف {r[2]}/{r[3]})": r for r in res}
+                chosen_q = st.selectbox("اختر الطالب من نتائج البحث:", list(r_dict.keys()))
+                r_val = r_dict[chosen_q]
+                selected_student = {
+                    "national_id": r_val[0],
+                    "name": r_val[1],
+                    "grade": r_val[2],
+                    "section": r_val[3],
+                    "phone": r_val[4]
+                }
+            else:
+                st.error("لم يتم العثور على طالب مطابق لبيانات البحث.")
+
+    # ظهور مربع نص الشكوى عند اختيار الطالب
+    if selected_student:
+        st.success(f"📌 الطالب المحدد: **{selected_student['name']}** | الهوية: `{selected_student['national_id']}` | الصف: {selected_student['grade']} (فصل {selected_student['section']})")
+        
+        # إدارة حالة نص الشكوى للتفريغ التلقائي عقب الإرسال
+        if "complaint_text_key" not in st.session_state:
+            st.session_state["complaint_text_key"] = ""
+            
+        complaint_val = st.text_area(
+            "نص الشكوى",
+            value=st.session_state["complaint_text_key"],
+            height=150,
+            placeholder="اكتب نص الشكوى هنا بكل سرية..."
+        )
+        
+        if st.button("📤 ارسال الشكوى لإدارة المدرسة", type="primary", use_container_width=True):
+            if complaint_val.strip():
+                # حفظ الشكوى في SQLite المحلية
+                cursor.execute("""
+                    INSERT INTO complaints (student_id, student_name, grade, section, phone, complaint_text, status)
+                    VALUES (?, ?, ?, ?, ?, ?, 'pending')
+                """, (selected_student['national_id'], selected_student['name'], selected_student['grade'], selected_student['section'], selected_student['phone'], complaint_val.strip()))
+                conn.commit()
+                
+                # حفظ الشكوى في Supabase إن أمكن
+                if supabase_client:
+                    try:
+                        supabase_client.table("complaints").insert({
+                            "student_id": selected_student['national_id'],
+                            "student_name": selected_student['name'],
+                            "grade": selected_student['grade'],
+                            "section": selected_student['section'],
+                            "phone": selected_student['phone'],
+                            "complaint_text": complaint_val.strip(),
+                            "status": "pending"
+                        }).execute()
+                    except Exception:
+                        pass
+                
+                # تفريغ مربع النص
+                st.session_state["complaint_text_key"] = ""
+                st.balloons()
+                st.success("✅ تم إرسال الشكوى بنجاح إلى إدارة المدرسة وتفريغ مربع النص.")
+                st.rerun()
+            else:
+                st.error("يرجى كتابة نص الشكوى أولاً قبل الإرسال.")
+
+# ===================================================================
+# الصفحة الثانية: إدارة المدرسة (محمية بكلمة سر 000999)
+# ===================================================================
+elif page == "الصفحة الثانية: إدارة المدرسة":
+    st.subheader("🔐 صفحة إدارة المدرسة (المدير / الوكيل)")
+    
+    pwd = st.text_input("أدخل كلمة السر للدخول:", type="password")
+    
+    if pwd == "000999":
+        st.success("مرحباً بكم في لوحة إدارة الشكاوى وسجلات الطلاب.")
+        
+        tab1, tab2 = st.tabs(["📥 الشكاوى المرسلة والقرارات", "⚙️ إدارة الطلاب (إضافة / حذف / تحديث)"])
+        cursor = conn.cursor()
+        
+        with tab1:
+            cursor.execute("SELECT id, student_name, grade, section, phone, complaint_text, created_at FROM complaints WHERE status='pending' ORDER BY id DESC")
+            pending_complaints = cursor.fetchall()
+            
+            if pending_complaints:
+                st.info(f"يوجد ({len(pending_complaints)}) شكوى جديدة بانتظار اتخاذ الإجراء.")
+                comp_map = {f"شكوى رقم #{c[0]} - الطالب: {c[1]} ({c[2]}/{c[3]})": c for c in pending_complaints}
+                selected_comp_label = st.selectbox("اختر الشكوى للبدء بالمعالجة:", list(comp_map.keys()))
+                c_info = comp_map[selected_comp_label]
+                
+                st.markdown(f"""
+                <div class="report-card">
+                    <h4 style="color:#005A2B;">تفاصيل الشكوى #{c_info[0]}</h4>
+                    <p><b>الطالب:</b> {c_info[1]} | <b>الصف:</b> {c_info[2]} (فصل {c_info[3]}) | <b>جوال ولي الأمر:</b> {c_info[4]}</p>
+                    <p><b>تاريخ الإرسال:</b> {c_info[6]}</p>
+                    <hr>
+                    <p><b>نص الشكوى المقدمة:</b></p>
+                    <div style="background:#F8FAFC; padding:15px; border-radius:8px; border-right:4px solid #005A2B;">{c_info[5]}</div>
+                </div>
+                """, unsafe_allow_html=True)
+                
+                action_text = st.text_area("الإدراءات المتخذة من إدارة المدرسة", height=120, placeholder="اكتب الإجراءات المتخذة من مدير / وكيل المدرسة هنا...")
+                
+                if st.button("تم اتخاذ القرار", type="primary"):
+                    if action_text.strip():
+                        cursor.execute("UPDATE complaints SET action_taken=?, status='resolved' WHERE id=?", (action_text.strip(), c_info[0]))
+                        conn.commit()
+                        
+                        if supabase_client:
+                            try:
+                                supabase_client.table("complaints").update({"action_taken": action_text.strip(), "status": "resolved"}).eq("id", c_info[0]).execute()
+                            except Exception:
+                                pass
+                                
+                        st.success("تم تسديد الشكوى بنجاح ونقل التقرير لصفحة التقارير الرسمية!")
+                        st.rerun()
+                    else:
+                        st.error("يرجى تدوين الإجراءات المتخذة قبل الضغط على الزر.")
+            else:
+                st.success("لا توجد شكاوى معلقة حالياً.")
+                
+        with tab2:
+            st.markdown("#### 🛠️ عمليات أمان السجلات")
+            sub_action = st.radio("اختر العملية المطلوب تنفيذها:", ["إضافة طالب", "حذف طالب", "تحديث رقم جوال"])
+            
+            if sub_action == "إضافة طالب":
+                with st.form("add_student_form"):
+                    col_a, col_b = st.columns(2)
+                    with col_a:
+                        in_id = st.text_input("رقم الهوية الوطنية:")
+                        in_name = st.text_input("اسم الطالب الرباعي:")
+                    with col_b:
+                        in_grade = st.selectbox("الصف الدراسي:", ["الأول المتوسط", "الثاني المتوسط", "الثالث المتوسط"])
+                        in_sec = st.selectbox("الفصل:", ["1", "2", "3"])
+                        in_phone = st.text_input("رقم الجوال (بالصيغة الدولية مثلاً 966500000000):", value="9665")
+                    
+                    if st.form_submit_button("إضافة طالب جديد"):
+                        if in_id and in_name and in_phone:
+                            try:
+                                cursor.execute("INSERT INTO students VALUES (?,?,?,?,?)", (in_id, in_name, in_grade, in_sec, in_phone))
+                                conn.commit()
+                                st.success(f"تمت إضافة الطالب {in_name} بنجاح.")
+                            except sqlite3.IntegrityError:
+                                st.error("رقم الهوية الوطنية موجود بالفعل بالسجل.")
+                        else:
+                            st.error("جميع البيانات مطلوبة.")
+                            
+            elif sub_action == "حذف طالب":
+                cursor.execute("SELECT national_id, name FROM students")
+                students_data = cursor.fetchall()
+                if students_data:
+                    del_map = {f"{s[1]} (هوية: {s[0]})": s[0] for s in students_data}
+                    del_target = st.selectbox("اختر الطالب المراد حذفه نهائياً:", list(del_map.keys()))
+                    if st.button("حذف طالب", type="secondary"):
+                        cursor.execute("DELETE FROM students WHERE national_id=?", (del_map[del_target],))
+                        conn.commit()
+                        st.success("تم حذف الطالب من القاعدة بنجاح.")
+                        st.rerun()
+                        
+            elif sub_action == "تحديث رقم جوال":
+                cursor.execute("SELECT national_id, name, phone FROM students")
+                all_st = cursor.fetchall()
+                if all_st:
+                    phone_map = {f"{s[1]} (الجوال الحالي: {s[2]})": (s[0], s[2]) for s in all_st}
+                    chosen_up = st.selectbox("اختر الطالب لتحديث رقمه:", list(phone_map.keys()))
+                    new_ph = st.text_input("رقم الجوال الجديد:", value=phone_map[chosen_up][1])
+                    if st.button("تحديث رقم جوال"):
+                        cursor.execute("UPDATE students SET phone=? WHERE national_id=?", (new_ph, phone_map[chosen_up][0]))
+                        conn.commit()
+                        st.success("تم تحديث رقم الجوال بنجاح.")
+                        st.rerun()
+
+    elif pwd:
+        st.error("كلمة السر غير صحيحة!")
+
+# ===================================================================
+# الصفحة الثالثة: التقارير الصادرة (محمية بكلمة سر 000999)
+# ===================================================================
+elif page == "الصفحة الثالثة: التقارير الصادرة":
+    st.subheader("📊 التقارير الصادرة والقرارات الإدارية")
+    
+    pwd_rep = st.text_input("أدخل كلمة السر للوصول للتقارير:", type="password")
+    
+    if pwd_rep == "000999":
+        cursor = conn.cursor()
+        cursor.execute("SELECT id, student_name, grade, section, phone, complaint_text, action_taken, created_at FROM complaints WHERE status='resolved' ORDER BY id DESC")
+        reports = cursor.fetchall()
+        
+        if reports:
+            st.info(f"إجمالي التقارير الإدارية الصادرة: ({len(reports)}) تقارير.")
+            for r in reports:
+                # إنشاء رابط واتساب لإرسال التقرير للطالب
+                wa_msg = f"تقرير إداري من متوسطة الثغر النموذجية الأهلية\nالطالب: {r[1]}\nالصف: {r[2]} / فصل {r[3]}\nنص الشكوى: {r[5]}\nالإجراء المتخذ: {r[6]}"
+                wa_url = f"https://wa.me/{r[4]}?text={urllib.parse.quote(wa_msg)}"
+                
+                st.markdown(f"""
+                <div class="report-card">
+                    <h3 style="color:#005A2B; text-align:center; margin-bottom:4px;">📋 تقرير إداري مفصل #{r[0]}</h3>
+                    <p style="text-align:center; color:#64748B; font-weight:bold;">متوسطة الثغر النموذجية الأهلية بالرياض</p>
+                    <hr>
+                    <p><b>اسم الطالب:</b> {r[1]} &nbsp;|&nbsp; <b>الصف:</b> {r[2]} (فصل {r[3]}) &nbsp;|&nbsp; <b>تاريخ التقرير:</b> {r[7]}</p>
+
+                    <p><b>نص الشكوى المقدمة:</b></p>
+                    <div style="background:#F1F5F9; padding:12px; border-radius:8px; margin-bottom:12px;">{r[5]}</div>
+
+                    <p><b>الإدراءات المتخذة من إدارة المدرسة:</b></p>
+                    <div style="background:#E6F4EA; border-right:5px solid #28a745; padding:12px; border-radius:8px; font-weight:bold; color:#064E3B; margin-bottom:15px;">{r[6]}</div>
+
+                    <div style="text-align:center; margin-top:15px;">
+                        <a href="{wa_url}" target="_blank" style="background-color:#25D366; color:white; padding:10px 22px; border-radius:30px; text-decoration:none; font-weight:bold; display:inline-block; box-shadow:0 3px 8px rgba(37,211,102,0.3);">
+                            📱 إرسال التقرير إلى واتساب الطالب ({r[4]})
+                        </a>
+                    </div>
+
+                    <div class="signatures-block">
+                        <div class="sig-item">
+                            <b>وكيل شؤون الطلاب</b><br>
+                            صالح بن عبدالله الدعجاني
+                        </div>
+                        <div class="sig-item">
+                            <b>وكيل شؤون المعلمين</b><br>
+                            محمد مبروك السيد
+                        </div>
+                        <div class="sig-item">
+                            <b>مدير المدرسة</b><br>
+                            إبراهيم بن موسى التميمي
+                        </div>
+                    </div>
+                </div>
+                """, unsafe_allow_html=True)
+        else:
+            st.warning("لا توجد تقارير صادرة حتى الآن.")
+            
+    elif pwd_rep:
+        st.error("كلمة السر غير صحيحة!")
+
+# ===================================================================
+# 6. حقوق التطوير والتوقيع النهائي
+# ===================================================================
+st.markdown("""
+<div class="dev-footer">
+    تصميم وتطوير: <b>محمد سامي السعيد</b>
+</div>
+""", unsafe_allow_html=True)
