@@ -641,7 +641,7 @@ elif page == "الصفحة الثانية: إدارة المدرسة":
     st.subheader("🔐 صفحة إدارة المدرسة (المدير / الوكيل)")
     
     if not st.session_state["admin_logged_in"]:
-        pwd = st.text_input("أدخل كلمة السر للدخول (000999):", type="password", key="pwd_admin_input")
+        pwd = st.text_input("أدخل كلمة السر للدخول (******):", type="password", key="pwd_admin_input")
         if st.button("🔓 دخول لوحة الإدارة", type="primary"):
             if pwd == "000999":
                 st.session_state["admin_logged_in"] = True
@@ -790,7 +790,7 @@ elif page == "الصفحة الثالثة: التقارير الصادرة":
     st.subheader("📊 التقارير الصادرة والقرارات الإدارية")
     
     if not st.session_state["reports_logged_in"]:
-        pwd_rep = st.text_input("أدخل كلمة السر للوصول للتقارير (000999):", type="password", key="pwd_rep_input")
+        pwd_rep = st.text_input("أدخل كلمة السر للوصول للتقارير (******):", type="password", key="pwd_rep_input")
         if st.button("🔓 دخول صفحة التقارير", type="primary"):
             if pwd_rep == "000999":
                 st.session_state["reports_logged_in"] = True
