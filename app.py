@@ -1,85 +1,11 @@
 import streamlit as st
 import pandas as pd
 import sqlite3
-import datetime
+from datetime import datetime, timezone, timedelta
+from zoneinfo import ZoneInfo
 import urllib.parse
 
-import tempfile
-import subprocess
-
-def create_pdf_report_bytes(s_name, s_id, grade, sec, phone, created_at, comp_text, action_taken, r_id):
-    html_doc = f"""<!DOCTYPE html>
-<html dir="rtl" lang="ar">
-<head>
-    <meta charset="utf-8">
-    <title>تقرير إداري - {s_name}</title>
-    <style>
-        body {{ font-family: 'Noto Naskh Arabic', 'Cairo', sans-serif; padding: 25px; direction: rtl; text-align: right; background: #fff; color: #1e293b; }}
-        .card {{ border: 3px solid #005A2B; padding: 25px; border-radius: 12px; background: #ffffff; }}
-        .header {{ text-align: right; border-right: 5px solid #005A2B; border-bottom: 2px solid #D4AF37; padding-bottom: 12px; margin-bottom: 18px; }}
-        .header h2 {{ color: #005A2B; margin: 0; font-size: 20px; text-align: right; }}
-        .header h3 {{ color: #475569; margin: 4px 0; font-size: 15px; text-align: right; }}
-        .header h4 {{ color: #D4AF37; margin: 8px 0 0 0; font-size: 16px; text-align: right; }}
-        .info-box {{ background: #F8FAFC; border: 1px solid #E2E8F0; padding: 12px 15px; border-radius: 8px; margin-bottom: 15px; font-size: 14px; line-height: 1.8; text-align: right; }}
-        .section {{ margin-bottom: 15px; padding: 12px 15px; border-radius: 8px; font-size: 14px; line-height: 1.6; text-align: right; }}
-        .sigs {{ display: table; width: 100%; margin-top: 30px; border-top: 2px dashed #CBD5E1; padding-top: 15px; text-align: center; }}
-        .sig-col {{ display: table-cell; width: 33.33%; text-align: center; font-size: 13px; font-weight: bold; }}
-    </style>
-</head>
-<body>
-    <div class="card">
-        <div class="header">
-            <h2>المملكة العربية السعودية - وزارة التعليم</h2>
-            <h3>الإدارة العامة للتعليم بمنطقة الرياض | متوسطة الثغر النموذجية الأهلية</h3>
-            <h4>📋 تقرير قرار إداري سرّي رقم #{r_id}</h4>
-        </div>
-        <div class="info-box">
-            <b>اسم الطالب:</b> {s_name} &nbsp;|&nbsp; <b>الهوية الوطنية:</b> {s_id}<br>
-            <b>الصف الدراسي:</b> {grade} (فصل {sec}) &nbsp;|&nbsp; <b>جوال ولي الأمر:</b> {phone}<br>
-            <b>تاريخ القرار:</b> {created_at}
-        </div>
-        <div class="section" style="background:#FFF9E6; border-right: 5px solid #D4AF37;">
-            <b style="color:#5A4300;">📝 نص الشكوى المقدمة:</b><br>
-            <div style="margin-top:6px; color:#453200;">{comp_text}</div>
-        </div>
-        <div class="section" style="background:#E6F4EA; border-right: 5px solid #28a745;">
-            <b style="color:#064E3B;">✅ الإجراءات المتخذة من إدارة المدرسة:</b><br>
-            <div style="margin-top:6px; color:#064E3B; font-weight:bold;">{action_taken}</div>
-        </div>
-        <div class="sigs">
-            <div class="sig-col"><b>وكيل شؤون الطلاب</b><br><span style="color:#005A2B;">صالح بن عبدالله الدعجاني</span></div>
-            <div class="sig-col"><b>وكيل شؤون المعلمين</b><br><span style="color:#005A2B;">محمد مبروك السيد</span></div>
-            <div class="sig-col"><b>مدير المدرسة</b><br><span style="color:#005A2B;">إبراهيم بن موسى التميمي</span></div>
-        </div>
-    </div>
-</body>
-</html>"""
-
-    with tempfile.NamedTemporaryFile(suffix='.html', mode='w', encoding='utf-8', delete=False) as f_html:
-        f_html.write(html_doc)
-        f_html_path = f_html.name
-
-    f_pdf_path = f_html_path.replace('.html', '.pdf')
-    try:
-        subprocess.run(['wkhtmltopdf', '--quiet', '--enable-local-file-access', f_html_path, f_pdf_path], check=True)
-        with open(f_pdf_path, 'rb') as f_pdf:
-            pdf_bytes = f_pdf.read()
-    except Exception:
-        pdf_bytes = html_doc.encode('utf-8')
-    finally:
-        if os.path.exists(f_html_path): os.remove(f_html_path)
-        if os.path.exists(f_pdf_path): os.remove(f_pdf_path)
-    return pdf_bytes
-
-import textwrap
-import re
-
-# دالة تنظيف HTML لمنع ظهور كود النص في Streamlit
-def clean_html(html_str):
-    lines = [line.strip() for line in html_str.strip().split('\n')]
-    return '\n'.join(lines)
-
-# محاولة استيراد مكتبة Supabase للتخزين السحابي الدائم
+# محاولة استيراد مكتبة Supabase للتخزين السحابي إن وجدت
 try:
     from supabase import create_client, Client
     HAS_SUPABASE = True
@@ -87,7 +13,37 @@ except ImportError:
     HAS_SUPABASE = False
 
 # ===================================================================
-# 1. تهيئة الصفحة والهوية الرسمية (تجاوب مع الجوال والكمبيوتر)
+# 0. دالة ضبط التوقيت الرسمي (توقيت مكة المكرمة / المملكة العربية السعودية)
+# ===================================================================
+def get_saudi_datetime(offset_hours=3):
+    """الحصول على كائن datetime بتوقيت السعودية (GMT+3) أو الفارق المحدد"""
+    try:
+        if offset_hours == 3:
+            return datetime.now(ZoneInfo("Asia/Riyadh"))
+        else:
+            tz = timezone(timedelta(hours=offset_hours))
+            return datetime.now(tz)
+    except Exception:
+        tz = timezone(timedelta(hours=offset_hours))
+        return datetime.now(tz)
+
+def format_arabic_time(dt):
+    """تنسيق الوقت إلى صيغة عربية واضحة (مثال: 2026-09-29 09:41 ص)"""
+    time_str = dt.strftime("%Y-%m-%d %I:%M")
+    am_pm = "ص" if dt.strftime("%p") == "AM" else "م"
+    return f"{time_str} {am_pm}"
+
+def get_saudi_time(offset_hours=3):
+    dt = get_saudi_datetime(offset_hours)
+    return format_arabic_time(dt)
+
+def clean_html(html_str):
+    """تنظيف نصوص HTML لضمان عرض جميل بدون مسافات زائدة"""
+    lines = [line.strip() for line in html_str.strip().split('\n')]
+    return '\n'.join(lines)
+
+# ===================================================================
+# 1. تهيئة الصفحة والهوية الرسمية
 # ===================================================================
 st.set_page_config(
     page_title="منصة شكاوى الطلاب - متوسطة الثغر النموذجية الأهلية",
@@ -96,171 +52,83 @@ st.set_page_config(
     initial_sidebar_state="auto"
 )
 
-# إدارة حالة تسجيل الدخول في session_state لحفظ الجلسة عند الضغط على الأزرار
 if "admin_logged_in" not in st.session_state:
     st.session_state["admin_logged_in"] = False
-
 if "reports_logged_in" not in st.session_state:
     st.session_state["reports_logged_in"] = False
 
 # ===================================================================
-# 2. تنسيقات CSS بالهوية الوطنية السعودية وتصميم أنيق للجوال
+# 2. تنسيقات CSS بالهوية الوطنية والتصميم التجاوبي
 # ===================================================================
 css_style = clean_html("""
 <style>
-    @import url('https://fonts.googleapis.com/css2?family=Cairo:wght@400;600;700;800&display=swap');
+    @import url('https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700;800&display=swap');
     
     html, body, [class*="css"] {
-        font-family: 'Cairo', sans-serif;
+        font-family: 'Tajawal', sans-serif !important;
         direction: rtl;
         text-align: right;
     }
     
-    /* الترويسة بالهوية الوطنية السعودية (الأخضر الملكي والذهبي) */
-    .saudi-header {
+    .main-header {
         background: linear-gradient(135deg, #005A2B 0%, #003B1C 100%);
-        color: #FFFFFF;
-        padding: 25px 20px;
-        border-radius: 16px;
-        text-align: center;
-        border-bottom: 5px solid #D4AF37;
-        box-shadow: 0 8px 22px rgba(0,0,0,0.12);
-        margin-bottom: 22px;
-    }
-    .saudi-header h1 {
-        color: #FFFFFF !important;
-        font-size: 26px;
-        font-weight: 800;
-        margin-bottom: 8px;
-    }
-    .saudi-header h3 {
-        color: #D4AF37 !important;
-        font-size: 18px;
-        font-weight: 600;
-        margin: 0;
-    }
-    
-    /* صندوق التنبيه والأمان والسرية */
-    .notice-box {
-        background-color: #FFF9E6;
-        border-right: 6px solid #D4AF37;
-        border-left: 1px solid #FFEBA8;
-        padding: 16px 20px;
+        color: white;
+        padding: 20px;
         border-radius: 12px;
-        color: #5A4300;
-        font-weight: 700;
-        font-size: 15px;
+        text-align: center;
         margin-bottom: 25px;
-        display: flex;
-        align-items: center;
-        gap: 12px;
-        box-shadow: 0 3px 12px rgba(0,0,0,0.04);
+        box-shadow: 0 4px 12px rgba(0,0,0,0.15);
     }
     
-    /* مؤشر حفظ البيانات */
-    .status-saved {
-        background-color: #28a745;
-        color: white;
-        padding: 10px 18px;
-        border-radius: 25px;
-        font-weight: bold;
-        text-align: center;
-        font-size: 14px;
-        box-shadow: 0 2px 8px rgba(40,167,69,0.3);
-        margin-bottom: 18px;
-    }
-    .status-unsaved {
-        background-color: #dc3545;
-        color: white;
-        padding: 10px 18px;
-        border-radius: 25px;
-        font-weight: bold;
-        text-align: center;
-        font-size: 14px;
-        box-shadow: 0 2px 8px rgba(220,53,69,0.3);
-        margin-bottom: 18px;
-    }
-    
-    /* بطاقة التقرير والشكوى */
     .report-card {
-        background: #FFFFFF;
-        border: 2px solid #005A2B;
-        border-radius: 14px;
-        padding: 22px;
-        margin-bottom: 25px;
-        box-shadow: 0 4px 15px rgba(0,0,0,0.06);
-        direction: rtl !important;
-        text-align: right !important;
-    }
-    .report-card *, .report-official-header *, .report-card div, .report-card p, .report-card h2, .report-card h3, .report-card h4 {
-        direction: rtl !important;
-        text-align: right !important;
-    }
-    
-    /* ترويسة التقرير الرسمية */
-    .report-official-header {
-        text-align: right;
-        border-right: 5px solid #005A2B;
-        border-bottom: 2px solid #D4AF37;
-        padding-bottom: 15px;
+        background: white;
+        border-radius: 12px;
+        padding: 20px;
+        border: 1px solid #E2E8F0;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.05);
         margin-bottom: 20px;
     }
-    .report-official-header h2 {
-        color: #005A2B;
-        text-align: right;
-        font-size: 20px;
-        font-weight: 800;
-        margin: 0;
+    
+    .status-saved {
+        background-color: #D1E7DD;
+        color: #0F5132;
+        padding: 8px 12px;
+        border-radius: 6px;
+        font-weight: bold;
+        text-align: center;
     }
-    .report-official-header p {
-        color: #475569;
-        font-weight: 700;
-        margin: 4px 0 0 0;
-        font-size: 14px;
+    .status-unsaved {
+        background-color: #F8D7DA;
+        color: #842029;
+        padding: 8px 12px;
+        border-radius: 6px;
+        font-weight: bold;
+        text-align: center;
     }
     
-    /* التوقيعات الرسمية للإدارة */
+    .report-official-header {
+        text-align: center;
+        border-bottom: 2px solid #005A2B;
+        padding-bottom: 10px;
+        margin-bottom: 15px;
+    }
+    
     .signatures-block {
+        display: flex;
+        justify-content: space-between;
         margin-top: 25px;
         padding-top: 15px;
-        border-top: 2px dashed #CBD5E1;
-        display: flex;
-        justify-content: space-around;
-        flex-wrap: wrap;
-        text-align: center;
-        background-color: #F8FAFC;
-        border-radius: 10px;
-        padding: 15px;
+        border-top: 1px dashed #CBD5E1;
     }
     .sig-item {
-        margin: 5px 15px;
-        font-size: 14px;
-        font-weight: 700;
-        color: #1E293B;
-    }
-    
-    /* حقوق التطوير */
-    .dev-footer {
         text-align: center;
-        padding: 20px;
-        margin-top: 40px;
-        border-top: 1px solid #E2E8F0;
-        color: #64748B;
-        font-size: 14px;
-        font-weight: 600;
-    }
-    
-    @media (max-width: 768px) {
-        .saudi-header h1 { font-size: 20px; }
-        .saudi-header h3 { font-size: 14px; }
-        .signatures-block { flex-direction: column; gap: 12px; }
     }
 </style>
 """)
 st.markdown(css_style, unsafe_allow_html=True)
 
 # ===================================================================
-# 3. إعداد وقواعد البيانات (Supabase + SQLite المحلية الاحتياطية)
+# 3. إعداد قواعد البيانات (SQLite + Supabase)
 # ===================================================================
 SUPABASE_URL = "https://yathpzoxjfpgahkbjzgz.supabase.co"
 SUPABASE_KEY = "sb_publishable_4Igw4yxTyqcZzSvXei6TEg_cuxhLKcE"
@@ -272,7 +140,7 @@ try:
 except Exception:
     pass
 
-# جميع طلاب متوسطة الثغر النموذجية الأهلية بالرياض (167 طالباً)
+# سجل طلاب المدرسة
 ALL_SCHOOL_STUDENTS = [
     # الأول المتوسط - 1
     ('1167628468', 'إبراهيم بن محمد بن علي الوهيبي', 'الأول المتوسط', '1', '966504158122'),
@@ -481,12 +349,11 @@ def init_db():
             complaint_text TEXT NOT NULL,
             action_taken TEXT DEFAULT '',
             status TEXT DEFAULT 'pending',
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            created_at TEXT DEFAULT ''
         )
     """)
     conn.commit()
-    
-    # تحديث وتعبئة جميع الطلاب الـ 167 في القاعدة المحلية
+
     cursor.executemany("""
         INSERT OR REPLACE INTO school_students (national_id, name, grade, section, phone)
         VALUES (?, ?, ?, ?, ?)
@@ -496,10 +363,8 @@ def init_db():
 
 conn = init_db()
 
-# فحص حالة الاتصال بقاعدة البيانات
 supabase_client = None
 is_saved_status = False
-
 if HAS_SUPABASE and SUPABASE_KEY and SUPABASE_KEY != "YOUR_SUPABASE_ANON_KEY":
     try:
         supabase_client = create_client(SUPABASE_URL, SUPABASE_KEY)
@@ -510,36 +375,46 @@ else:
     is_saved_status = True
 
 # ===================================================================
-# 4. الترويسة والتنبيه الأمني للسرية
-# ===================================================================
-header_html = clean_html("""
-<div class="saudi-header">
-    <h1>🏛️ منصة سرية لشكاوى الطلاب</h1>
-    <h3>متوسطة الثغر النموذجية الأهلية بالرياض</h3>
-</div>
-<div class="notice-box">
-    <span style="font-size:24px;">⚠️</span>
-    <span>تنبيه: عزيزي ولي الأمر / عزيزي الطالب هذه المنصة سرية لايطلع على شكواك غير إدارة المدرسة من مدير - وكيل.</span>
-</div>
-""")
-st.markdown(header_html, unsafe_allow_html=True)
-
-# ===================================================================
-# 5. القائمة الجانبية ولوحة التحكم
+# 4. القائمة الجانبية وإعدادات التوقيت
 # ===================================================================
 st.sidebar.markdown("### 🎛️ لوحة التحكم")
-
 if is_saved_status:
     st.sidebar.markdown('<div class="status-saved">🟢 تم حفظ البيانات</div>', unsafe_allow_html=True)
 else:
     st.sidebar.markdown('<div class="status-unsaved">🔴 لم يتم الحفظ</div>', unsafe_allow_html=True)
 
 st.sidebar.markdown("---")
+st.sidebar.markdown("### 🕒 إعدادات الوقت والتوقيت")
+tz_offset = st.sidebar.number_input(
+    "فارق التوقيت عن UTC (ساعات):", 
+    min_value=-12, 
+    max_value=14, 
+    value=3, 
+    step=1,
+    help="التوقيت القياسي المعتمد للمملكة العربية السعودية هو GMT+3"
+)
 
+current_platform_time = get_saudi_time(offset_hours=tz_offset)
+st.sidebar.info(f"⏰ **التوقيت الحالي المعتمد:**\n\n`{current_platform_time}`")
+
+st.sidebar.markdown("---")
 page = st.sidebar.radio(
     "انتقل إلى الصفحة المطلوب العمل عليها:",
     ["الصفحة الأولى: تقديم الشكوى", "الصفحة الثانية: إدارة المدرسة", "الصفحة الثالثة: التقارير الصادرة"]
 )
+
+# ===================================================================
+# الترويسة الرئيسية
+# ===================================================================
+st.markdown(clean_html(f"""
+<div class="main-header">
+    <h1 style="margin:0; font-size:26px;">🏫 منصة شكاوى الطلاب الرسمية</h1>
+    <p style="margin:5px 0 0 0; font-size:16px;">متوسطة الثغر النموذجية الأهلية بالرياض</p>
+    <div style="margin-top:10px; background:rgba(255,255,255,0.2); display:inline-block; padding:4px 15px; border-radius:20px; font-size:14px; font-weight:bold;">
+        🕒 الوقت المعتمد حالياً: {current_platform_time} (توقيت مكة المكرمة)
+    </div>
+</div>
+"""), unsafe_allow_html=True)
 
 # ===================================================================
 # الصفحة الأولى: تقديم الشكوى (للطالب وولي الأمر)
@@ -552,7 +427,7 @@ if page == "الصفحة الأولى: تقديم الشكوى":
         <p style="margin:0; font-weight:bold; color:#1E293B;">اختر الصف الدراسي والفصل، ثم أدخل رقم الهوية الوطنية للطالب للبحث وإظهار اسم الطالب وتأكيد تقديم الشكوى:</p>
     </div>
     """), unsafe_allow_html=True)
-    
+
     c1, c2 = st.columns(2)
     with c1:
         grade_sel = st.selectbox("اختر الصف الدراسي:", ["الأول المتوسط", "الثاني المتوسط", "الثالث المتوسط"])
@@ -560,19 +435,17 @@ if page == "الصفحة الأولى: تقديم الشكوى":
         sec_sel = st.selectbox("اختر الفصل:", ["1", "2", "3"])
         
     q_id = st.text_input("🔍 أدخل رقم الهوية الوطنية للطالب للبحث:", placeholder="أدخل رقم الهوية الوطنية هنا...")
-    
+
     cursor = conn.cursor()
     selected_student = None
-    
+
     if q_id.strip():
-        # البحث برقم الهوية داخل الصف والفصل أولاً
         cursor.execute(
             "SELECT national_id, name, grade, section, phone FROM school_students WHERE national_id LIKE ? AND grade=? AND section=?",
             (f"%{q_id.strip()}%", grade_sel, sec_sel)
         )
         res = cursor.fetchall()
         
-        # إذا لم يعثر عليه في نفس الفصل المحدد، يتم البحث برقم الهوية في قاعدة البيانات كاملة
         if not res:
             cursor.execute(
                 "SELECT national_id, name, grade, section, phone FROM school_students WHERE national_id LIKE ?",
@@ -613,18 +486,39 @@ if page == "الصفحة الأولى: تقديم الشكوى":
                 height=150,
                 placeholder="اكتب نص الشكوى هنا بكل سرية..."
             )
+            
+            dt_now = get_saudi_datetime(offset_hours=tz_offset)
+            time_display_str = format_arabic_time(dt_now)
+            st.caption(f"🗓️ سيتم تسجيل الشكوى بالتاريخ والوقت التالي: **{time_display_str}**")
+            
             submit_btn = st.form_submit_button("📤 ارسال الشكوى لإدارة المدرسة", type="primary", use_container_width=True)
             
         if submit_btn:
             if complaint_val.strip():
+                # تجهيز التوقيت
+                dt_now = get_saudi_datetime(offset_hours=tz_offset)
+                time_display_str = format_arabic_time(dt_now)
+                time_iso_str = dt_now.isoformat()
+                
+                # 1. الحفظ في قاعدة البيانات المحلية (SQLite)
                 cursor.execute("""
-                    INSERT INTO student_complaints (student_id, student_name, grade, section, phone, complaint_text, status)
-                    VALUES (?, ?, ?, ?, ?, ?, 'pending')
-                """, (selected_student['national_id'], selected_student['name'], selected_student['grade'], selected_student['section'], selected_student['phone'], complaint_val.strip()))
+                    INSERT INTO student_complaints (student_id, student_name, grade, section, phone, complaint_text, status, created_at)
+                    VALUES (?, ?, ?, ?, ?, ?, 'pending', ?)
+                """, (
+                    selected_student['national_id'], 
+                    selected_student['name'], 
+                    selected_student['grade'], 
+                    selected_student['section'], 
+                    selected_student['phone'], 
+                    complaint_val.strip(),
+                    time_display_str
+                ))
                 conn.commit()
                 
+                # 2. الحفظ في Supabase إن وجدت
                 if supabase_client:
                     try:
+                        # محاولة الإرسال بتنسيق ISO المتوافق مع حقول TIMESTAMP
                         supabase_client.table("student_complaints").insert({
                             "student_id": selected_student['national_id'],
                             "student_name": selected_student['name'],
@@ -632,13 +526,27 @@ if page == "الصفحة الأولى: تقديم الشكوى":
                             "section": selected_student['section'],
                             "phone": selected_student['phone'],
                             "complaint_text": complaint_val.strip(),
-                            "status": "pending"
+                            "status": "pending",
+                            "created_at": time_iso_str
                         }).execute()
                     except Exception:
-                        pass
+                        try:
+                            # المحاولة الثانية بالنص العربي إذا كان الحقل TEXT
+                            supabase_client.table("student_complaints").insert({
+                                "student_id": selected_student['national_id'],
+                                "student_name": selected_student['name'],
+                                "grade": selected_student['grade'],
+                                "section": selected_student['section'],
+                                "phone": selected_student['phone'],
+                                "complaint_text": complaint_val.strip(),
+                                "status": "pending",
+                                "created_at": time_display_str
+                            }).execute()
+                        except Exception:
+                            pass
                 
                 st.balloons()
-                st.success("✅ تم إرسال الشكوى بنجاح إلى إدارة المدرسة وتفريغ مربع النص.")
+                st.success(f"✅ تم إرسال الشكوى بنجاح إلى إدارة المدرسة بتوقيت ({time_display_str}).")
             else:
                 st.error("يرجى كتابة نص الشكوى أولاً قبل الإرسال.")
 
@@ -682,7 +590,7 @@ elif page == "الصفحة الثانية: إدارة المدرسة":
                 <div class="report-card">
                     <h4 style="color:#005A2B; margin-top:0;">تفاصيل الشكوى #{c_info[0]}</h4>
                     <p style="margin:5px 0;"><b>الطالب:</b> {c_info[2]} | <b>الهوية:</b> {c_info[1]} | <b>الصف:</b> {c_info[3]} (فصل {c_info[4]})</p>
-                    <p style="margin:5px 0;"><b>جوال ولي الأمر:</b> <code>{c_info[5]}</code> | <b>تاريخ الإرسال:</b> {c_info[7]}</p>
+                    <p style="margin:5px 0;"><b>جوال ولي الأمر:</b> <code>{c_info[5]}</code> | <b>تاريخ الإرسال:</b> {c_info[7] if c_info[7] else 'غير محدد'}</p>
                     <hr style="margin:12px 0;">
                     <p style="font-weight:bold; color:#1E293B; margin-bottom:5px;">📝 نص الشكوى المقدمة:</p>
                     <div style="background:#FFF9E6; border-right:5px solid #D4AF37; padding:15px; border-radius:8px; color:#453200;">{c_info[6]}</div>
@@ -690,9 +598,9 @@ elif page == "الصفحة الثانية: إدارة المدرسة":
                 """)
                 st.markdown(card_html, unsafe_allow_html=True)
                 
-                action_text = st.text_area("الإدراءات المتخذة من إدارة المدرسة", height=120, placeholder="اكتب الإجراءات المتخذة من مدير / وكيل المدرسة هنا...")
+                action_text = st.text_area("الإجراءات المتخذة من إدارة المدرسة", height=120, placeholder="اكتب الإجراءات المتخذة من مدير / وكيل المدرسة هنا...")
                 
-                col_act1, col_act2 = st.columns([3, 1])
+                col_act1, col_act2 = st.columns(2)
                 with col_act1:
                     if st.button("✅ تم اتخاذ القرار", type="primary", use_container_width=True):
                         if action_text.strip():
@@ -723,6 +631,15 @@ elif page == "الصفحة الثانية: إدارة المدرسة":
                         st.rerun()
             else:
                 st.success("لا توجد شكاوى معلقة حالياً.")
+                
+            st.markdown("---")
+            with st.expander("🛠️ تصحيح التواريخ للشكاوى القديمة"):
+                if st.button("🔄 ضبط وتحديث التواريخ المفقودة لتوقيت السعودية الحالي"):
+                    fix_time = get_saudi_time(offset_hours=tz_offset)
+                    cursor.execute("UPDATE student_complaints SET created_at=? WHERE created_at='' OR created_at IS NULL", (fix_time,))
+                    conn.commit()
+                    st.success(f"تمت إعادة ضبط التواريخ المفقودة إلى: {fix_time}")
+                    st.rerun()
                 
         with tab2:
             st.markdown("#### 🛠️ عمليات أمان السجلات")
@@ -824,19 +741,18 @@ elif page == "الصفحة الثالثة: التقارير الصادرة":
                 r_id, s_id, s_name, grade, sec, phone, comp_text, action_taken, created_at = r
                 
                 wa_text = f"""📋 *تقرير إداري - متوسطة الثغر النموذجية الأهلية بالرياض*
-----------------------------------------
+
+--------------------------------------------------------------------------------
+
 👤 *اسم الطالب:* {s_name}
 🪪 *الهوية الوطنية:* {s_id}
 📚 *الصف الدراسي:* {grade} (فصل {sec})
 🗓️ *تاريخ القرار:* {created_at}
+📝 *نص الشكوى:* {comp_text}
+✅ *الإجراءات المتخذة من إدارة المدرسة:* {action_taken}
 
-📝 *نص الشكوى:*
-{comp_text}
+--------------------------------------------------------------------------------
 
-✅ *الإجراءات المتخذة من إدارة المدرسة:*
-{action_taken}
-
-----------------------------------------
 👨‍💼 *وكيل شؤون الطلاب:* صالح بن عبدالله الدعجاني
 👨‍💼 *وكيل شؤون المعلمين:* محمد مبروك السيد
 👨‍💼 *مدير المدرسة:* إبراهيم بن موسى التميمي"""
@@ -857,7 +773,7 @@ elif page == "الصفحة الثالثة: التقارير الصادرة":
                     <div style="background:#F8FAFC; padding:15px; border-radius:10px; margin-bottom:15px; border:1px solid #E2E8F0; direction: rtl !important; text-align: right !important;">
                         <p style="margin:5px 0;"><b>اسم الطالب:</b> {s_name} &nbsp;|&nbsp; <b>الهوية الوطنية:</b> <code>{s_id}</code></p>
                         <p style="margin:5px 0;"><b>الصف الدراسي:</b> {grade} (فصل {sec}) &nbsp;|&nbsp; <b>جوال ولي الأمر:</b> <code>{phone}</code></p>
-                        <p style="margin:5px 0;"><b>تاريخ التقرير:</b> {created_at}</p>
+                        <p style="margin:5px 0;"><b>تاريخ التقرير:</b> {created_at if created_at else 'غير محدد'}</p>
                     </div>
 
                     <div style="margin-bottom:15px;">
@@ -893,7 +809,7 @@ elif page == "الصفحة الثالثة: التقارير الصادرة":
                 
                 st.markdown(report_html, unsafe_allow_html=True)
                 
-                col_btn1, col_btn2, col_btn3 = st.columns([2, 2, 1])
+                col_btn1, col_btn2 = st.columns(2)
                 
                 with col_btn1:
                     wa_btn_html = clean_html(f"""
@@ -906,55 +822,6 @@ elif page == "الصفحة الثالثة: التقارير الصادرة":
                     st.markdown(wa_btn_html, unsafe_allow_html=True)
                 
                 with col_btn2:
-                    printable_doc = clean_html(f"""<!DOCTYPE html>
-<html dir="rtl" lang="ar">
-<head>
-    <meta charset="utf-8">
-    <title>تقرير_إداري_{s_name}</title>
-    <style>
-        body {{ font-family: 'Cairo', sans-serif; padding: 30px; direction: rtl !important; text-align: right !important; background: #fff; color: #1e293b; }}
-        .card {{ border: 2px solid #005A2B; padding: 30px; border-radius: 12px; direction: rtl !important; text-align: right !important; }}
-        .header {{ text-align: right !important; border-bottom: 2px solid #D4AF37; border-right: 5px solid #005A2B; padding-right: 15px; padding-bottom: 15px; margin-bottom: 20px; direction: rtl !important; }}
-        .header h2, .header h3, .header h4 {{ color: #005A2B; margin: 0; text-align: right !important; direction: rtl !important; }}
-        .section {{ margin-bottom: 18px; padding: 15px; border-radius: 8px; text-align: right !important; direction: rtl !important; }}
-        p, div, b, span {{ text-align: right !important; direction: rtl !important; }}
-        .sigs {{ display: flex; justify-content: space-between; margin-top: 40px; text-align: right; border-top: 2px dashed #ccc; padding-top: 20px; }}
-    </style>
-</head>
-<body onload="window.print()">
-    <div class="card">
-        <div class="header">
-            <h2>المملكة العربية السعودية - وزارة التعليم</h2>
-            <h3>متوسطة الثغر النموذجية الأهلية بالرياض</h3>
-            <h4 style="color: #D4AF37;">تقرير قرار إداري سرّي رقم #{r_id}</h4>
-        </div>
-        <p><b>اسم الطالب:</b> {s_name} &nbsp;|&nbsp; <b>الهوية الوطنية:</b> {s_id} &nbsp;|&nbsp; <b>الصف:</b> {grade} (فصل {sec})</p>
-        <p><b>تاريخ القرار:</b> {created_at} &nbsp;|&nbsp; <b>جوال ولي الأمر:</b> {phone}</p>
-        <hr>
-        <div class="section" style="background:#fff9e6; border-right: 4px solid #D4AF37;">
-            <b>نص الشكوى المقدمة:</b><br>{comp_text}
-        </div>
-        <div class="section" style="background:#e6f4ea; border-right: 4px solid #28a745;">
-            <b>الإجراء المتخذ من إدارة المدرسة:</b><br>{action_taken}
-        </div>
-        <div class="sigs">
-            <div><b>وكيل شؤون الطلاب</b><br>صالح بن عبدالله الدعجاني</div>
-            <div><b>وكيل شؤون المعلمين</b><br>محمد مبروك السيد</div>
-            <div><b>مدير المدرسة</b><br>إبراهيم بن موسى التميمي</div>
-        </div>
-    </div>
-</body>
-</html>""")
-                    st.download_button(
-                        label="📄 طباعة / تصدير التقرير كـ PDF",
-                        data=printable_doc,
-                        file_name=f"تقرير_شكوى_{s_name}_{r_id}.html",
-                        mime="text/html",
-                        key=f"dl_rep_{r_id}",
-                        use_container_width=True
-                    )
-                    
-                with col_btn3:
                     if st.button(f"🗑️ حذف التقرير", key=f"del_rep_btn_{r_id}", type="secondary", use_container_width=True):
                         cursor.execute("DELETE FROM student_complaints WHERE id=?", (r_id,))
                         conn.commit()
@@ -969,13 +836,3 @@ elif page == "الصفحة الثالثة: التقارير الصادرة":
                 st.markdown("<hr style='margin:20px 0;'>", unsafe_allow_html=True)
         else:
             st.warning("لا توجد تقارير صادرة حتى الآن.")
-
-# ===================================================================
-# 6. حقوق التطوير والتوقيع النهائي
-# ===================================================================
-footer_html = clean_html("""
-<div class="dev-footer">
-    تصميم وتطوير: <b>محمد سامي السعيد</b>
-</div>
-""")
-st.markdown(footer_html, unsafe_allow_html=True)
