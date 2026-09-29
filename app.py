@@ -13,7 +13,7 @@ except ImportError:
     HAS_SUPABASE = False
 
 # ===================================================================
-# 0. دالة ضبط التوقيت الرسمي (توقيت مكة المكرمة / المملكة العربية السعودية)
+# 0. دالة ضبط وتنسيق التوقيت الرسمي (توقيت مكة المكرمة / المملكة العربية السعودية)
 # ===================================================================
 def get_saudi_datetime(offset_hours=3):
     """الحصول على كائن datetime بتوقيت السعودية (GMT+3) أو الفارق المحدد"""
@@ -28,7 +28,7 @@ def get_saudi_datetime(offset_hours=3):
         return datetime.now(tz)
 
 def format_arabic_time(dt):
-    """تنسيق الوقت إلى صيغة عربية واضحة (مثال: 2026-09-29 09:41 ص)"""
+    """تنسيق كائن الوقت إلى صيغة عربية واضحة بـ 12 ساعة (مثال: 2026-09-29 09:41 ص)"""
     time_str = dt.strftime("%Y-%m-%d %I:%M")
     am_pm = "ص" if dt.strftime("%p") == "AM" else "م"
     return f"{time_str} {am_pm}"
@@ -37,8 +37,47 @@ def get_saudi_time(offset_hours=3):
     dt = get_saudi_datetime(offset_hours)
     return format_arabic_time(dt)
 
+def parse_and_format_saudi_time(raw_time_str, offset_hours=3):
+    """
+    تحليل أي نص تاريخ سواء ISO أو UTC أو عادي وتحويله بدقة إلى توقيت السعودية (GMT+3)
+    تضمن ظهور الوقت بشكل مظبوط وبنفس الهيئة في جميع صفحات النظام والتقارير.
+    """
+    if not raw_time_str or not str(raw_time_str).strip():
+        return get_saudi_time(offset_hours)
+    
+    val = str(raw_time_str).strip()
+    
+    # إذا كان النص منسقاً مسبقاً بالتوقيت العربي (يحتوي على ص أو م)
+    if ("ص" in val or "م" in val) and len(val.split()) >= 2:
+        return val
+
+    # محاولة تحليل ISO strings مثل 2026-09-29T06:40:54+00:00 أو 2026-09-29T06:40:54
+    try:
+        dt = datetime.fromisoformat(val.replace("Z", "+00:00"))
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        
+        saudi_tz = ZoneInfo("Asia/Riyadh") if offset_hours == 3 else timezone(timedelta(hours=offset_hours))
+        dt_saudi = dt.astimezone(saudi_tz)
+        return format_arabic_time(dt_saudi)
+    except Exception:
+        pass
+
+    # محاولة تحليل التواريخ القياسية العادية YYYY-MM-DD HH:MM:SS
+    for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M", "%Y/%m/%d %H:%M:%S", "%Y/%m/%d %H:%M"):
+        try:
+            dt = datetime.strptime(val, fmt)
+            dt_utc = dt.replace(tzinfo=timezone.utc)
+            saudi_tz = ZoneInfo("Asia/Riyadh") if offset_hours == 3 else timezone(timedelta(hours=offset_hours))
+            dt_saudi = dt_utc.astimezone(saudi_tz)
+            return format_arabic_time(dt_saudi)
+        except Exception:
+            continue
+
+    return val
+
 def clean_html(html_str):
-    """تنظيف نصوص HTML لضمان عرض جميل بدون مسافات زائدة"""
+    """تنظيف نصوص HTML لضمان عدم وجود مسافات غير مرغوب فيها"""
     lines = [line.strip() for line in html_str.strip().split('\n')]
     return '\n'.join(lines)
 
@@ -58,37 +97,117 @@ if "reports_logged_in" not in st.session_state:
     st.session_state["reports_logged_in"] = False
 
 # ===================================================================
-# 2. تنسيقات CSS بالهوية الوطنية والتصميم التجاوبي
+# 2. تنسيقات CSS المحدثة لاتخاذ اتجاه اليمين (RTL) بالكامل
 # ===================================================================
 css_style = clean_html("""
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700;800&display=swap');
     
-    html, body, [class*="css"] {
+    html, body, [class*="css"], .stApp {
         font-family: 'Tajawal', sans-serif !important;
-        direction: rtl;
-        text-align: right;
+        direction: rtl !important;
+        text-align: right !important;
+    }
+    
+    /* توجيه محاذاة كافة العناوين والنصوص لليمين */
+    .stMarkdown, .stText, p, h1, h2, h3, h4, h5, h6, div, span {
+        direction: rtl !important;
+        text-align: right !important;
     }
     
     .main-header {
         background: linear-gradient(135deg, #005A2B 0%, #003B1C 100%);
         color: white;
-        padding: 20px;
+        padding: 22px;
         border-radius: 12px;
-        text-align: center;
+        text-align: right !important;
+        direction: rtl !important;
         margin-bottom: 25px;
         box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+        border-right: 6px solid #D4AF37;
     }
     
     .report-card {
-        background: white;
+        background: #FFFFFF;
         border-radius: 12px;
-        padding: 20px;
+        padding: 25px;
         border: 1px solid #E2E8F0;
-        box-shadow: 0 4px 6px rgba(0,0,0,0.05);
+        box-shadow: 0 4px 8px rgba(0,0,0,0.06);
+        margin-bottom: 25px;
+        direction: rtl !important;
+        text-align: right !important;
+    }
+    
+    .report-official-header {
+        text-align: right !important;
+        direction: rtl !important;
+        border-bottom: 2px solid #005A2B;
+        padding-bottom: 12px;
         margin-bottom: 20px;
     }
     
+    .report-official-header h2, 
+    .report-official-header h3, 
+    .report-official-header p {
+        text-align: right !important;
+        direction: rtl !important;
+        margin: 4px 0;
+    }
+
+    .info-box-rtl {
+        background-color: #F8FAFC;
+        padding: 15px 20px;
+        border-radius: 10px;
+        border: 1px solid #E2E8F0;
+        border-right: 5px solid #005A2B;
+        margin-bottom: 15px;
+        direction: rtl !important;
+        text-align: right !important;
+    }
+
+    .complaint-box-rtl {
+        background-color: #FFF9E6;
+        border-right: 5px solid #D4AF37;
+        padding: 15px 20px;
+        border-radius: 8px;
+        color: #453200;
+        direction: rtl !important;
+        text-align: right !important;
+        font-size: 15px;
+        line-height: 1.6;
+    }
+
+    .action-box-rtl {
+        background-color: #E6F4EA;
+        border-right: 5px solid #28a745;
+        padding: 15px 20px;
+        border-radius: 8px;
+        font-weight: bold;
+        color: #064E3B;
+        direction: rtl !important;
+        text-align: right !important;
+        font-size: 15px;
+        line-height: 1.6;
+    }
+
+    .signatures-block {
+        display: flex;
+        flex-direction: row;
+        justify-content: space-between;
+        align-items: flex-start;
+        margin-top: 30px;
+        padding-top: 18px;
+        border-top: 1px dashed #CBD5E1;
+        direction: rtl !important;
+        text-align: right !important;
+    }
+    
+    .sig-item {
+        text-align: right !important;
+        direction: rtl !important;
+        flex: 1;
+    }
+
     .status-saved {
         background-color: #D1E7DD;
         color: #0F5132;
@@ -103,24 +222,6 @@ css_style = clean_html("""
         padding: 8px 12px;
         border-radius: 6px;
         font-weight: bold;
-        text-align: center;
-    }
-    
-    .report-official-header {
-        text-align: center;
-        border-bottom: 2px solid #005A2B;
-        padding-bottom: 10px;
-        margin-bottom: 15px;
-    }
-    
-    .signatures-block {
-        display: flex;
-        justify-content: space-between;
-        margin-top: 25px;
-        padding-top: 15px;
-        border-top: 1px dashed #CBD5E1;
-    }
-    .sig-item {
         text-align: center;
     }
 </style>
@@ -375,27 +476,27 @@ else:
     is_saved_status = True
 
 # ===================================================================
-# 4. القائمة الجانبية وإعدادات التوقيت
+# 4. خيار ضبط الفارق الزمني بالقائمة الجانبية
 # ===================================================================
 st.sidebar.markdown("### 🎛️ لوحة التحكم")
+
 if is_saved_status:
     st.sidebar.markdown('<div class="status-saved">🟢 تم حفظ البيانات</div>', unsafe_allow_html=True)
 else:
     st.sidebar.markdown('<div class="status-unsaved">🔴 لم يتم الحفظ</div>', unsafe_allow_html=True)
 
 st.sidebar.markdown("---")
-st.sidebar.markdown("### 🕒 إعدادات الوقت والتوقيت")
+st.sidebar.markdown("#### 🕒 ضبط منطقة التوقيت")
 tz_offset = st.sidebar.number_input(
-    "فارق التوقيت عن UTC (ساعات):", 
+    "فارق الساعات عن UTC (السعودية = +3):", 
     min_value=-12, 
     max_value=14, 
     value=3, 
-    step=1,
-    help="التوقيت القياسي المعتمد للمملكة العربية السعودية هو GMT+3"
+    step=1
 )
 
 current_platform_time = get_saudi_time(offset_hours=tz_offset)
-st.sidebar.info(f"⏰ **التوقيت الحالي المعتمد:**\n\n`{current_platform_time}`")
+st.sidebar.caption(f"توقيت المنصة الآن: **{current_platform_time}**")
 
 st.sidebar.markdown("---")
 page = st.sidebar.radio(
@@ -408,9 +509,9 @@ page = st.sidebar.radio(
 # ===================================================================
 st.markdown(clean_html(f"""
 <div class="main-header">
-    <h1 style="margin:0; font-size:26px;">🏫 منصة شكاوى الطلاب الرسمية</h1>
-    <p style="margin:5px 0 0 0; font-size:16px;">متوسطة الثغر النموذجية الأهلية بالرياض</p>
-    <div style="margin-top:10px; background:rgba(255,255,255,0.2); display:inline-block; padding:4px 15px; border-radius:20px; font-size:14px; font-weight:bold;">
+    <h1 style="margin:0; font-size:26px; text-align:right !important;">🏫 منصة شكاوى الطلاب الرسمية</h1>
+    <p style="margin:5px 0 0 0; font-size:16px; text-align:right !important;">متوسطة الثغر النموذجية الأهلية بالرياض</p>
+    <div style="margin-top:12px; background:rgba(255,255,255,0.2); display:inline-block; padding:6px 16px; border-radius:20px; font-size:14px; font-weight:bold; text-align:right !important;">
         🕒 الوقت المعتمد حالياً: {current_platform_time} (توقيت مكة المكرمة)
     </div>
 </div>
@@ -487,18 +588,15 @@ if page == "الصفحة الأولى: تقديم الشكوى":
                 placeholder="اكتب نص الشكوى هنا بكل سرية..."
             )
             
-            dt_now = get_saudi_datetime(offset_hours=tz_offset)
-            time_display_str = format_arabic_time(dt_now)
+            time_display_str = get_saudi_time(offset_hours=tz_offset)
             st.caption(f"🗓️ سيتم تسجيل الشكوى بالتاريخ والوقت التالي: **{time_display_str}**")
             
             submit_btn = st.form_submit_button("📤 ارسال الشكوى لإدارة المدرسة", type="primary", use_container_width=True)
             
         if submit_btn:
             if complaint_val.strip():
-                # تجهيز التوقيت
-                dt_now = get_saudi_datetime(offset_hours=tz_offset)
-                time_display_str = format_arabic_time(dt_now)
-                time_iso_str = dt_now.isoformat()
+                time_display_str = get_saudi_time(offset_hours=tz_offset)
+                time_iso_str = get_saudi_datetime(offset_hours=tz_offset).isoformat()
                 
                 # 1. الحفظ في قاعدة البيانات المحلية (SQLite)
                 cursor.execute("""
@@ -518,7 +616,6 @@ if page == "الصفحة الأولى: تقديم الشكوى":
                 # 2. الحفظ في Supabase إن وجدت
                 if supabase_client:
                     try:
-                        # محاولة الإرسال بتنسيق ISO المتوافق مع حقول TIMESTAMP
                         supabase_client.table("student_complaints").insert({
                             "student_id": selected_student['national_id'],
                             "student_name": selected_student['name'],
@@ -531,7 +628,6 @@ if page == "الصفحة الأولى: تقديم الشكوى":
                         }).execute()
                     except Exception:
                         try:
-                            # المحاولة الثانية بالنص العربي إذا كان الحقل TEXT
                             supabase_client.table("student_complaints").insert({
                                 "student_id": selected_student['national_id'],
                                 "student_name": selected_student['name'],
@@ -586,14 +682,19 @@ elif page == "الصفحة الثانية: إدارة المدرسة":
                 selected_comp_label = st.selectbox("اختر الشكوى للبدء بالمعالجة:", list(comp_map.keys()))
                 c_info = comp_map[selected_comp_label]
                 
+                # تنسيق الوقت المظبوط لعرض الشكوى
+                formatted_complaint_date = parse_and_format_saudi_time(c_info[7], offset_hours=tz_offset)
+                
                 card_html = clean_html(f"""
                 <div class="report-card">
-                    <h4 style="color:#005A2B; margin-top:0;">تفاصيل الشكوى #{c_info[0]}</h4>
-                    <p style="margin:5px 0;"><b>الطالب:</b> {c_info[2]} | <b>الهوية:</b> {c_info[1]} | <b>الصف:</b> {c_info[3]} (فصل {c_info[4]})</p>
-                    <p style="margin:5px 0;"><b>جوال ولي الأمر:</b> <code>{c_info[5]}</code> | <b>تاريخ الإرسال:</b> {c_info[7] if c_info[7] else 'غير محدد'}</p>
-                    <hr style="margin:12px 0;">
-                    <p style="font-weight:bold; color:#1E293B; margin-bottom:5px;">📝 نص الشكوى المقدمة:</p>
-                    <div style="background:#FFF9E6; border-right:5px solid #D4AF37; padding:15px; border-radius:8px; color:#453200;">{c_info[6]}</div>
+                    <h4 style="color:#005A2B; margin-top:0; text-align:right !important;">تفاصيل الشكوى #{c_info[0]}</h4>
+                    <div class="info-box-rtl">
+                        <p style="margin:5px 0;"><b>اسم الطالب:</b> {c_info[2]} &nbsp;|&nbsp; <b>الهوية الوطنية:</b> <code>{c_info[1]}</code></p>
+                        <p style="margin:5px 0;"><b>الصف الدراسي:</b> {c_info[3]} (فصل {c_info[4]}) &nbsp;|&nbsp; <b>جوال ولي الأمر:</b> <code>{c_info[5]}</code></p>
+                        <p style="margin:5px 0;"><b>تاريخ تقديم الشكوى:</b> {formatted_complaint_date}</p>
+                    </div>
+                    <p style="font-weight:bold; color:#1E293B; margin-bottom:8px; text-align:right !important;">📝 نص الشكوى المقدمة:</p>
+                    <div class="complaint-box-rtl">{c_info[6]}</div>
                 </div>
                 """)
                 st.markdown(card_html, unsafe_allow_html=True)
@@ -604,12 +705,18 @@ elif page == "الصفحة الثانية: إدارة المدرسة":
                 with col_act1:
                     if st.button("✅ تم اتخاذ القرار", type="primary", use_container_width=True):
                         if action_text.strip():
-                            cursor.execute("UPDATE student_complaints SET action_taken=?, status='resolved' WHERE id=?", (action_text.strip(), c_info[0]))
+                            # تحديث وقت اتخاذ القرار أيضاً لضمان الدقة
+                            decision_time = get_saudi_time(offset_hours=tz_offset)
+                            cursor.execute("UPDATE student_complaints SET action_taken=?, status='resolved', created_at=? WHERE id=?", (action_text.strip(), decision_time, c_info[0]))
                             conn.commit()
                             
                             if supabase_client:
                                 try:
-                                    supabase_client.table("student_complaints").update({"action_taken": action_text.strip(), "status": "resolved"}).eq("id", c_info[0]).execute()
+                                    supabase_client.table("student_complaints").update({
+                                        "action_taken": action_text.strip(), 
+                                        "status": "resolved",
+                                        "created_at": decision_time
+                                    }).eq("id", c_info[0]).execute()
                                 except Exception:
                                     pass
                                     
@@ -634,11 +741,11 @@ elif page == "الصفحة الثانية: إدارة المدرسة":
                 
             st.markdown("---")
             with st.expander("🛠️ تصحيح التواريخ للشكاوى القديمة"):
-                if st.button("🔄 ضبط وتحديث التواريخ المفقودة لتوقيت السعودية الحالي"):
+                if st.button("🔄 إعادة ضبط وتحديث جميع التواريخ لتوقيت السعودية الحالي (GMT+3)"):
                     fix_time = get_saudi_time(offset_hours=tz_offset)
-                    cursor.execute("UPDATE student_complaints SET created_at=? WHERE created_at='' OR created_at IS NULL", (fix_time,))
+                    cursor.execute("UPDATE student_complaints SET created_at=?", (fix_time,))
                     conn.commit()
-                    st.success(f"تمت إعادة ضبط التواريخ المفقودة إلى: {fix_time}")
+                    st.success(f"تمت إعادة ضبط تواريخ كافة الشكاوى في القاعدة إلى: {fix_time}")
                     st.rerun()
                 
         with tab2:
@@ -740,6 +847,9 @@ elif page == "الصفحة الثالثة: التقارير الصادرة":
             for r in reports:
                 r_id, s_id, s_name, grade, sec, phone, comp_text, action_taken, created_at = r
                 
+                # تحويل وتنسيق التاريخ بتوقيت السعودية المظبوط
+                formatted_report_date = parse_and_format_saudi_time(created_at, offset_hours=tz_offset)
+                
                 wa_text = f"""📋 *تقرير إداري - متوسطة الثغر النموذجية الأهلية بالرياض*
 
 --------------------------------------------------------------------------------
@@ -747,7 +857,7 @@ elif page == "الصفحة الثالثة: التقارير الصادرة":
 👤 *اسم الطالب:* {s_name}
 🪪 *الهوية الوطنية:* {s_id}
 📚 *الصف الدراسي:* {grade} (فصل {sec})
-🗓️ *تاريخ القرار:* {created_at}
+🗓️ *تاريخ القرار:* {formatted_report_date}
 📝 *نص الشكوى:* {comp_text}
 ✅ *الإجراءات المتخذة من إدارة المدرسة:* {action_taken}
 
@@ -762,30 +872,30 @@ elif page == "الصفحة الثالثة: التقارير الصادرة":
                 wa_url = f"https://wa.me/{clean_phone}?text={encoded_wa}"
                 
                 report_html = clean_html(f"""
-                <div class="report-card" id="report-{r_id}" style="direction: rtl !important; text-align: right !important;">
+                <div class="report-card" id="report-{r_id}">
                     <div class="report-official-header">
                         <h2>المملكة العربية السعودية</h2>
                         <p>وزارة التعليم | الإدارة العامة للتعليم بمنطقة الرياض</p>
-                        <p style="color:#005A2B; font-weight:800; font-size:16px; margin-top:5px;">متوسطة الثغر النموذجية الأهلية (بنين)</p>
-                        <h3 style="color:#D4AF37; margin-top:10px; font-weight:800;">📋 تقرير قرار إداري سرّي رقم #{r_id}</h3>
+                        <p style="color:#005A2B; font-weight:800; font-size:16px;">متوسطة الثغر النموذجية الأهلية (بنين)</p>
+                        <h3 style="color:#D4AF37; font-weight:800;">📋 تقرير قرار إداري سرّي رقم #{r_id}</h3>
                     </div>
                     
-                    <div style="background:#F8FAFC; padding:15px; border-radius:10px; margin-bottom:15px; border:1px solid #E2E8F0; direction: rtl !important; text-align: right !important;">
+                    <div class="info-box-rtl">
                         <p style="margin:5px 0;"><b>اسم الطالب:</b> {s_name} &nbsp;|&nbsp; <b>الهوية الوطنية:</b> <code>{s_id}</code></p>
                         <p style="margin:5px 0;"><b>الصف الدراسي:</b> {grade} (فصل {sec}) &nbsp;|&nbsp; <b>جوال ولي الأمر:</b> <code>{phone}</code></p>
-                        <p style="margin:5px 0;"><b>تاريخ التقرير:</b> {created_at if created_at else 'غير محدد'}</p>
+                        <p style="margin:5px 0;"><b>تاريخ إصدار التقرير:</b> {formatted_report_date}</p>
                     </div>
 
                     <div style="margin-bottom:15px;">
-                        <p style="font-weight:bold; color:#1E293B; margin-bottom:5px;">📝 نص الشكوى المقدمة:</p>
-                        <div style="background:#FFF9E6; border-right:5px solid #D4AF37; padding:12px 15px; border-radius:8px; color:#453200; direction: rtl !important; text-align: right !important;">
+                        <p style="font-weight:bold; color:#1E293B; margin-bottom:6px;">📝 نص الشكوى المقدمة:</p>
+                        <div class="complaint-box-rtl">
                             {comp_text}
                         </div>
                     </div>
 
                     <div style="margin-bottom:20px;">
-                        <p style="font-weight:bold; color:#005A2B; margin-bottom:5px;">✅ الإجراءات المتخذة من إدارة المدرسة:</p>
-                        <div style="background:#E6F4EA; border-right:5px solid #28a745; padding:12px 15px; border-radius:8px; font-weight:bold; color:#064E3B; direction: rtl !important; text-align: right !important;">
+                        <p style="font-weight:bold; color:#005A2B; margin-bottom:6px;">✅ الإجراءات المتخذة من إدارة المدرسة:</p>
+                        <div class="action-box-rtl">
                             {action_taken}
                         </div>
                     </div>
@@ -814,7 +924,7 @@ elif page == "الصفحة الثالثة: التقارير الصادرة":
                 with col_btn1:
                     wa_btn_html = clean_html(f"""
                     <a href="{wa_url}" target="_blank" style="text-decoration:none;">
-                        <div style="background-color:#25D366; color:white; padding:10px 15px; border-radius:10px; text-align:center; font-weight:bold; box-shadow:0 3px 8px rgba(37,211,102,0.3); font-size:14px;">
+                        <div style="background-color:#25D366; color:white; padding:11px 15px; border-radius:10px; text-align:center; font-weight:bold; box-shadow:0 3px 8px rgba(37,211,102,0.3); font-size:14px;">
                             📱 إرسال للواتساب ({phone})
                         </div>
                     </a>
